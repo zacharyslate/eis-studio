@@ -120,6 +120,35 @@ def test_out_of_window_arc_is_flagged():
     assert any("capacitive tail" in w or "blocking" in w for w in dr.warnings), dr.warnings
 
 
+def test_circuit_tree_roundtrip_and_parallel_branches():
+    from eisstudio import circuit_tree as ct
+    for c in ["R0-p(R1,CPE1)-CPE2", "L0-R0-p(R1,CPE1)-p(R2,CPE2)", "R0-p(R1-Wo1,CPE1)", "p(R1-p(R2,C2),CPE1)-W1"]:
+        assert ct.to_string(ct.parse(c)) == c
+    assert ct.to_string(ct.parse("R0-p(p(R1,C1),R2)")) == "R0-p(R1,C1,R2)"
+    # impedance.py evaluates 3-branch parallels correctly
+    f = np.logspace(5, -1, 30)
+    w = 2 * np.pi * f
+    Z = ecm.predict("p(R1,C1,R2)", {}, [100.0, 1e-6, 300.0], f)
+    exact = 1 / (1 / 100.0 + 1j * w * 1e-6 + 1 / 300.0)
+    assert np.allclose(Z, exact, rtol=1e-10)
+    # new elements get free names
+    t = {"t": "s", "c": [{"t": "e", "k": "R", "n": "R0"}, {"t": "e", "k": "R", "n": None}, {"t": "e", "k": "R", "n": "R0"}]}
+    assert ct.to_string(t) == "R0-R1-R2"
+
+
+def test_fit_time_budget():
+    import time as _t
+    d = _load("synthetic_2arc.csv")[0][0]
+    circ = "R0-p(R1,CPE1)-p(R2-Wo1,CPE2)"     # Warburg not supported by this spectrum: slow to converge
+    names, _ = ecm.parse_circuit(circ)
+    t0 = _t.monotonic()
+    res = ecm.fit_ecm(d.freq, d.Z, circ, dict(zip(names, ecm.default_guess(names, d.freq, d.Z, circ))),
+                      n_starts=4, time_budget_s=8)
+    assert _t.monotonic() - t0 < 25                     # stopped near the 8 s budget, not after minutes
+    stopped = res.metrics["n_starts_timed_out"] >= 1
+    assert stopped == any("time limit" in w for w in res.warnings)   # a stop is always reported
+
+
 def test_conductivity_arithmetic():
     g = conductivity.Geometry.disc(thickness=1.0, diameter=10.0, unit="mm", d_thickness=0.01, d_diameter=0.05)
     c = conductivity.conductivity(50.0, g, dR_ohm=0.5)

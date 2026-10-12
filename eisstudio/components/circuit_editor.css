@@ -1,0 +1,74 @@
+.ce {
+  --ink: var(--st-text-color, #15212B);
+  --muted: color-mix(in srgb, var(--ink) 60%, transparent);
+  --line: color-mix(in srgb, var(--ink) 18%, transparent);
+  --accent: var(--st-primary-color, #0072B2);
+  --bg: var(--st-background-color, #fff);
+  --bg2: var(--st-secondary-background-color, #F3F6F5);
+  font-family: var(--st-font, "Source Sans Pro", sans-serif);
+  color: var(--ink);
+  position: relative;
+  user-select: none;
+}
+.ce .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.ce .preset {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 8px 7px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+  font: inherit; font-size: 12.5px; line-height: 1.25; text-align: left; cursor: pointer;
+}
+.ce .preset:hover { border-color: var(--accent); }
+.ce .preset.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.ce .preset:focus-visible, .ce .chip:focus-visible, .ce button:focus-visible, .ce .canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ce .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ce .palette { display: flex; flex-wrap: wrap; gap: 6px; }
+.ce .chip {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; width: 64px; padding: 4px 2px 3px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink);
+  font: inherit; font-size: 12px; cursor: grab; touch-action: none;
+}
+.ce .chip:hover { border-color: var(--accent); background: var(--bg2); }
+.ce .chip:active { cursor: grabbing; }
+.ce .chipsym { width: 56px; height: 26px; pointer-events: none; }
+.ce .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 13px; }
+.ce .tools button, .ce .tools select {
+  font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 10px; cursor: pointer;
+}
+.ce .tools button:disabled { opacity: 0.45; cursor: default; }
+.ce .mode { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+.ce .canvas {
+  position: relative; min-height: 150px; overflow-x: auto; padding: 6px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 30%, transparent); border-radius: 10px;
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--bg2) 1px, transparent 1px), linear-gradient(90deg, var(--bg2) 1px, transparent 1px);
+  background-size: 20px 20px;
+  touch-action: none;
+}
+.ce .canvas.dropok { border-color: var(--accent); border-style: solid; }
+.ce .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; color: var(--muted); font-size: 14px; pointer-events: none; }
+.ce .hint { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; line-height: 1.45; }
+.ce .ghost {
+  display: none; position: absolute; z-index: 10; pointer-events: none; padding: 3px 9px; border-radius: 6px;
+  background: var(--ink); color: var(--bg); font-size: 13px; font-weight: 600; white-space: nowrap;
+}
+.ce .ghost.hinted::after { content: " · " attr(data-hint); font-weight: 400; }
+
+/* schematic */
+.ce svg.circuit { display: block; overflow: visible; }
+.ce .wire { stroke: var(--ink); stroke-width: 1.8; fill: none; }
+.ce .plate { stroke: var(--ink); stroke-width: 2.6; fill: none; }
+.ce .part { fill: var(--bg); stroke: var(--ink); stroke-width: 1.8; }
+.ce .node { fill: var(--ink); }
+.ce .kindtext { fill: var(--ink); font-size: 11px; font-weight: 600; }
+.ce .name { fill: var(--ink); font-size: 15px; font-style: italic; font-family: "Times New Roman", "STIX Two Text", serif; }
+.ce .name.pending { fill: var(--muted); }
+.ce .hit { fill: transparent; stroke: none; cursor: grab; }
+.ce .hit:hover { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ce .hit.sel { fill: color-mix(in srgb, var(--accent) 14%, transparent); stroke: var(--accent); stroke-width: 1.5; }
+.ce .group { pointer-events: all; cursor: grab; fill: none; stroke: color-mix(in srgb, var(--ink) 16%, transparent); stroke-width: 1; stroke-dasharray: 4 4; }
+.ce .group.root { stroke: none; }
+.ce .group.sel { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: none; }
+.ce .target { fill: color-mix(in srgb, var(--accent) 7%, transparent); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 5 3; pointer-events: none; }
+.ce .dropmark { fill: var(--accent); pointer-events: none; }
+.ce svg.mini { pointer-events: none; }
+.ce svg.mini .name { font-size: 17px; }

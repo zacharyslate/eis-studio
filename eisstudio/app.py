@@ -21,22 +21,14 @@ from eisstudio import export as ex
 from eisstudio import io as eio
 from eisstudio import plotting as pl
 from eisstudio import validation as val
+from eisstudio import circuit_tree as ct
+from eisstudio.circuit_editor import circuit_editor
 
 SAMPLES = Path(__file__).parent / "sample_data"
 
 st.set_page_config(page_title="EIS Studio · ECM & DRT", page_icon=str(Path(__file__).parent / "assets" / "icon.png"),
                    layout="wide")
 
-CIRCUIT_PRESETS = {
-    "Custom": None,
-    "Pellet, blocking electrodes, bulk arc visible: R0-p(R1,CPE1)-CPE2": "R0-p(R1,CPE1)-CPE2",
-    "Pellet, bulk + grain boundary + blocking: R0-p(R1,CPE1)-p(R2,CPE2)-CPE3": "R0-p(R1,CPE1)-p(R2,CPE2)-CPE3",
-    "Pellet, arcs above window (RT sulfides): R0-CPE1": "R0-CPE1",
-    "One arc: R0-p(R1,CPE1)": "R0-p(R1,CPE1)",
-    "Two arcs: R0-p(R1,CPE1)-p(R2,CPE2)": "R0-p(R1,CPE1)-p(R2,CPE2)",
-    "Two arcs + inductance: L0-R0-p(R1,CPE1)-p(R2,CPE2)": "L0-R0-p(R1,CPE1)-p(R2,CPE2)",
-    "Randles with finite diffusion: R0-p(R1-Wo1,CPE1)": "R0-p(R1-Wo1,CPE1)",
-}
 
 
 # --------------------------------------------------------------------------- #
@@ -286,18 +278,54 @@ with tab_data:
 
 # ---------------------------- ECM TAB -------------------------------------- #
 with tab_ecm:
-    st.markdown("Syntax: `-` series, `p(a,b)` parallel, numbered elements. Elements: `R`, `C`, `L`, `CPE` (Q, α), "
-                "`W`, `Wo`, `Ws`, `La`, `G`, `Gs`, `K`, `Zarc`, `TLMQ`, `T`. "
-                "[Element definitions](https://impedancepy.readthedocs.io/en/latest/circuit-elements.html)")
-    c1, c2 = st.columns([2, 3])
-    preset = c1.selectbox("Preset", list(CIRCUIT_PRESETS), index=2)
-    default_circ = CIRCUIT_PRESETS[preset] or st.session_state.get("circuit_text", "R0-p(R1,CPE1)-CPE2")
-    circuit = c2.text_input("Circuit", value=default_circ, key=f"circ_{preset}").replace(" ", "")
-    st.session_state["circuit_text"] = circuit
+    # One source of truth: st.session_state["circuit_text"]. The visual editor and the text box
+    # both write to it; changes are applied at the top of the next run (widgets can't be changed
+    # after they are drawn), and every change is kept in a history for Undo.
+    ss = st.session_state
+    ss.setdefault("circuit_text", "R0-p(R1,CPE1)-CPE2")
+    ss.setdefault("circuit_hist", [])
+    if "circuit_pending" in ss:
+        new_text = ss.pop("circuit_pending")
+        if new_text != ss["circuit_text"]:
+            ss["circuit_hist"].append(ss["circuit_text"])
+            del ss["circuit_hist"][:-50]
+            ss["circuit_text"] = new_text
+        ss["circuit_input"] = ss["circuit_text"]
+    ss.setdefault("circuit_input", ss["circuit_text"])
+
+    def _typed():
+        try:
+            parsed = ct.parse(ss["circuit_input"])
+        except ct.CircuitSyntaxError as exc:
+            ss["circuit_typed_error"] = str(exc)
+            return
+        ss.pop("circuit_typed_error", None)
+        ss["circuit_pending"] = ct.to_string(parsed) if parsed else ""
+
+    st.markdown("**Equivalent circuit**: pick a preset, or drag elements onto the canvas. Drop beside an "
+                "element to connect it in series, above or below to connect it in parallel.")
+    edited = circuit_editor(ss["circuit_text"])
+    if edited is not None:
+        ss["circuit_pending"] = ct.to_string(edited.get("tree"))
+        st.rerun()
+    c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
+    c1.text_input("Circuit string (impedance.py syntax; edit directly if you prefer typing)", key="circuit_input",
+                  on_change=_typed, help="`-` joins elements in series, `p(a,b,…)` puts them in parallel, and "
+                  "elements are numbered: R0-p(R1,CPE1)-CPE2. Element definitions: "
+                  "https://impedancepy.readthedocs.io/en/latest/circuit-elements.html")
+    if c2.button("Undo", disabled=not ss["circuit_hist"], width="stretch"):
+        ss["circuit_text"] = ss["circuit_hist"].pop()
+        ss["circuit_pending"] = ss["circuit_text"]
+        st.rerun()
+    if ss.get("circuit_typed_error"):
+        st.error(f"Circuit string not applied: {ss['circuit_typed_error']}")
+    circuit = ss["circuit_text"]
+    if not circuit:
+        st.info("The circuit is empty. Choose a preset or drag an element onto the canvas.")
 
     try:
-        names, units = ecmm.parse_circuit(circuit)
-        circ_ok = True
+        names, units = ecmm.parse_circuit(circuit) if circuit else ([], [])
+        circ_ok = bool(circuit)
     except Exception as exc:  # noqa: BLE001
         st.error(f"Circuit error: {exc}")
         circ_ok = False
@@ -350,7 +378,7 @@ with tab_ecm:
                         initial[r["parameter"]] = v
                         bounds[r["parameter"]] = (_parse_float(r["lower"], r["parameter"]),
                                                   _parse_float(r["upper"], r["parameter"]))
-                with st.spinner("Fitting…"):
+                with st.spinner("Fitting… (stops after at most 45 s)"):
                     res = ecmm.fit_ecm(data.freq, data.Z, circuit, initial, fixed, bounds,
                                        ecmm.WEIGHTINGS[weighting], global_opt, int(n_starts))
                 st.session_state["ecm_res"] = res

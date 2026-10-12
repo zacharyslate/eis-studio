@@ -25,6 +25,11 @@ ICONS = {"png": "icon.png", "ico": "icon.ico", "icns": "icon.icns", "svg": "icon
 def _free_port(start: int, host: str) -> int:
     for port in range(start, start + 50):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if sys.platform != "win32":
+                # a port left in TIME_WAIT by a server that just quit is free for the new one
+                # (uvicorn sets SO_REUSEADDR too). Not on Windows, where it would allow
+                # binding to a port that is genuinely in use.
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind((host, port))
                 return port

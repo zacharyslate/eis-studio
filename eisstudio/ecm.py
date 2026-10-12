@@ -12,11 +12,13 @@ Docs: https://impedancepy.readthedocs.io/en/latest/circuit-elements.html
 from __future__ import annotations
 
 import re
+import time
 import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
 from impedance.models.circuits import fitting
+from scipy.optimize import curve_fit
 from impedance.models.circuits.elements import circuit_elements
 
 WEIGHTINGS = {
@@ -208,7 +210,10 @@ def _pair_tau(pair, get):
     d = {ta: a, tb: b}
     if "R" in d and "CPE" in d:
         R, Q, al = get(d["R"]), get(d["CPE"] + "_0"), get(d["CPE"] + "_1")
-        return (R * Q) ** (1 / al) if R > 0 and Q > 0 and al > 0 else np.inf
+        if not (R > 0 and Q > 0 and al > 0):
+            return np.inf
+        with np.errstate(over="ignore"):
+            return (R * Q) ** (1 / al)
     if "R" in d and "C" in d:
         return get(d["R"]) * get(d["C"])
     return None
@@ -268,16 +273,58 @@ def _starts(p0, lo, hi, n, seed):
     return out
 
 
+class _Budget(Exception):
+    pass
+
+
+def _timed_curve_fit(freq, Z, circuit, p0, fixed, lo, hi, weighting, deadline):
+    """The non-global path of impedance.py's ``circuit_fit`` (same model, bounds, weighting,
+    maxfev=1e5 and ftol=1e-13), with a wall-clock deadline.
+
+    Every evaluated parameter vector is scored; if the deadline passes, the best one seen is
+    returned with ``converged=False`` instead of blocking the interface for minutes.
+    """
+    f = np.asarray(freq, float)
+    y = np.hstack([Z.real, Z.imag])
+    model = fitting.wrapCircuit(circuit, fixed)
+    if weighting == "modulus":
+        sig = np.hstack([np.abs(Z), np.abs(Z)])
+    elif weighting == "proportional":
+        sig = np.hstack([np.maximum(np.abs(Z.real), 1e-12), np.maximum(np.abs(Z.imag), 1e-12)])
+    else:
+        sig = None
+    w = 1.0 / sig if sig is not None else 1.0
+    best = {"obj": np.inf, "p": np.asarray(p0, float)}
+
+    def timed(ff, *p):
+        out = model(ff, *p)
+        obj = float(np.sum(((out - y) * w) ** 2))
+        if np.isfinite(obj) and obj < best["obj"]:
+            best["obj"], best["p"] = obj, np.asarray(p, float)
+        if time.monotonic() > deadline:
+            raise _Budget()
+        return out
+
+    try:
+        popt, pcov = curve_fit(timed, f, y, p0=p0, bounds=(lo, hi), sigma=sig, maxfev=int(1e5), ftol=1e-13)
+        return popt, np.sqrt(np.diag(pcov)), True
+    except _Budget:
+        return best["p"], None, False
+
+
 def fit_ecm(freq, Z, circuit, initial: dict, fixed: dict | None = None, bounds: dict | None = None,
-            weighting="modulus", global_opt=False, n_starts=1, seed=0):
-    """... (see module docstring). With ``n_starts > 1`` the fit is repeated from log-perturbed
-    starting points (factor 10^±1.5; exponents in [0.5, 1]) and the lowest weighted objective
-    is kept. Equally good minima with different parameters are reported as non-identifiability."""
+            weighting="modulus", global_opt=False, n_starts=1, seed=0, time_budget_s=45.0):
     """Fit ``circuit`` to (freq, Z).
 
     initial : {param_name: guess} for every *free* parameter
     fixed   : {param_name: value} held constant
     bounds  : {param_name: (lo, hi)}; defaults: [0, inf), CPE exponents [0, 1]
+
+    With ``n_starts > 1`` the fit is repeated from log-perturbed starting points (factor
+    10^±1.5; exponents in [0.5, 1]) and the lowest weighted objective is kept; equally good
+    minima with different parameters are reported as non-identifiability. All starts together
+    get ``time_budget_s`` seconds; a start that runs out of time contributes the best point it
+    reached and the result is flagged as not converged.
     """
     circuit = circuit.replace(" ", "")
     fixed = dict(fixed or {})
@@ -295,18 +342,26 @@ def fit_ecm(freq, Z, circuit, initial: dict, fixed: dict | None = None, bounds: 
         raise ValueError("Each lower bound must be smaller than its upper bound.")
     p0 = [float(np.clip(p, l, h)) for p, l, h in zip(p0, lo, hi)]
 
-    kwargs = {}
-    if weighting == "proportional":
-        kwargs["sigma"] = np.hstack([np.maximum(np.abs(Z.real), 1e-12), np.maximum(np.abs(Z.imag), 1e-12)])
     trials = []
     caught = set()
-    for start in _starts(p0, lo, hi, 1 if global_opt else int(n_starts), seed):
+    t_end = time.monotonic() + float(time_budget_s)
+    timed_out = 0
+    starts = _starts(p0, lo, hi, 1 if global_opt else int(n_starts), seed)
+    for k, start in enumerate(starts):
+        if k > 0 and time.monotonic() > t_end:
+            caught.add(f"Time budget used up: {k} of {len(starts)} starts were run.")
+            break
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
             try:
-                popt, perr = fitting.circuit_fit(freq, Z, circuit, start, constants=fixed, bounds=(lo, hi),
-                                                 weight_by_modulus=(weighting == "modulus" and not global_opt),
-                                                 global_opt=global_opt, **dict(kwargs))
+                if global_opt:
+                    popt, perr = fitting.circuit_fit(freq, Z, circuit, start, constants=fixed, bounds=(lo, hi),
+                                                     global_opt=True)
+                else:
+                    # the first start always gets some time even if a previous call was slow
+                    deadline = max(t_end, time.monotonic() + 5.0) if k == 0 else t_end
+                    popt, perr, ok = _timed_curve_fit(freq, Z, circuit, start, fixed, lo, hi, weighting, deadline)
+                    timed_out += 0 if ok else 1
             except (RuntimeError, ValueError, np.linalg.LinAlgError) as exc:
                 caught.add(f"A start failed: {exc}")
                 continue
@@ -320,6 +375,13 @@ def fit_ecm(freq, Z, circuit, initial: dict, fixed: dict | None = None, bounds: 
     _, popt, perr = trials[0]
     perr = np.full(len(popt), np.nan) if perr is None else np.asarray(perr, float)
     multistart = _multistart_summary(trials, free)
+    if timed_out:
+        multistart["warnings"].insert(0, (
+            f"{timed_out} start(s) stopped at the {time_budget_s:.0f} s time limit without converging. The parameters "
+            "shown are the best point reached. Slow convergence usually means the circuit has more parameters than "
+            "this spectrum can determine: remove elements whose process is not visible in the data, fix "
+            "parameters you know, or tighten bounds."))
+    multistart["metrics"]["n_starts_timed_out"] = timed_out
 
     Z_fit = predict(circuit, fixed, popt, freq)
     fs = np.logspace(np.log10(freq.max()), np.log10(freq.min()), 400)
