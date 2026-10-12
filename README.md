@@ -4,7 +4,7 @@ A web app for analysing electrochemical impedance spectra:
 
 * **Upload** Gamry `.DTA`, ZView `.z`, BioLogic `.mpt` (including decimal-comma exports and multi-cycle files), VersaStudio/Parstat/Autolab/CH Instruments text exports, or any CSV/TXT/Excel table with frequency + Re/Im (or |Z| + phase). Column detection, sign convention and sweep splitting are automatic and reported; all of them can be overridden.
 * **Validate** with the Lin-KK Kramers–Kronig test.
-* **Equivalent-circuit fitting** (impedance.py): user-defined circuit, editable initial values, fixed parameters and bounds; modulus, proportional or unit weighting; multi-start fitting with an identifiability check; effective capacitance and characteristic frequency for R–CPE pairs.
+* **Equivalent-circuit fitting** (impedance.py): build the circuit visually (drag elements onto a canvas: beside = series, above/below = parallel; preset gallery; undo) or type it. Editable initial values, fixed parameters and bounds; modulus, proportional or unit weighting; multi-start fitting with an identifiability check and a time limit; effective capacitance and characteristic frequency for R–CPE pairs. The circuit diagram exports as PNG, PDF, SVG or TIFF.
 * **DRT** (pyDRTtools): all RBF types, Re/Im/combined data, inductance handling, 1st/2nd-order regularisation, six λ-selection criteria or manual λ, optional Bayesian (HMC) credible band, automatic peak detection and integration.
 * **Conductivity** σ = L/(R·A) from disc or slab geometry, with uncertainty propagation.
 * **Outputs:** Nyquist (data + fit), Bode |Z| and phase (data + fit), residuals, and γ(ln τ) vs τ (or g(τ) = γ/τ) with a dual τ/f axis. Each comes as an individual figure and a lettered composite in PNG/TIFF (300–1200 dpi), PDF or SVG with editable text, plus CSV tables and a settings JSON (software versions included). A single ZIP holds everything.
@@ -13,7 +13,7 @@ The sign convention is Z = Z′ + jZ″ with Z″ < 0 for capacitive behaviour; 
 
 ## Install (users)
 
-Website with instructions, tutorial and demo video: **https://zacharyslate.github.io/eis-studio/**
+Website with install instructions, a tutorial, a demo video, a measurement guide and the theory with calculators: **https://zacharyslate.github.io/eis-studio/**
 
 | OS | Command |
 |---|---|
@@ -37,9 +37,10 @@ eis-studio                      # or: streamlit run app.py
 | `eisstudio/` | the package: parsers, ECM, DRT, conductivity, plotting, exports, the Streamlit UI (`app.py`), launcher (`cli.py`), sample data, methods text |
 | `app.py` | entry point for hosted deployments (e.g. Streamlit Community Cloud) |
 | `docs/` | the website, served by GitHub Pages, including `install.sh` / `install.ps1` |
-| `site_src/`, `tools/` | website sources and build scripts: `python tools/make_hero.py && python tools/build_site.py` |
+| `site_src/`, `tools/` | website sources and build scripts: `python tools/make_hero.py && python tools/make_theory_figs.py && python tools/make_guide_figs.py && python tools/build_site.py` |
 | `tests/` | validation against synthetic spectra with known parameters, plus app end-to-end tests |
-| `.github/workflows/install-test.yml` | runs the real installers on Windows, macOS and Linux, launches the app and runs the tests on every push |
+| `.github/workflows/install-test.yml` | runs the installers from the repository on Windows, macOS and Linux, checks shortcuts and icons, launches the app and runs the tests on every push |
+| `.github/workflows/public-install.yml` | runs the exact one-line commands from the website against the live site on all three systems, after every site deployment and weekly |
 
 ### Publishing the website
 
@@ -53,7 +54,7 @@ The same repository also deploys to [Streamlit Community Cloud](https://share.st
 
 ```bash
 python tests/make_samples.py          # regenerates the synthetic files in eisstudio/sample_data/
-python -m pytest -q tests/            # 13 tests: parsers, ECM/DRT recovery of known parameters, app end-to-end
+python -m pytest -q tests/            # 17 tests: parsers, ECM/DRT recovery of known parameters, app end-to-end
 ```
 
 Every synthetic file has known parameters, documented in `tests/make_samples.py`. The tests check that:
