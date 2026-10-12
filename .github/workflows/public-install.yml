@@ -1,0 +1,55 @@
+# Runs the exact one-line install commands shown on the website, against the live site,
+# on fresh Windows, macOS and Linux machines - after every site deployment, weekly, and on demand.
+# This catches problems the repository-based test cannot see (how GitHub Pages serves the
+# scripts, the public download URL of the package).
+name: public-install
+
+on:
+  workflow_run:
+    workflows: ["pages build and deployment"]
+    types: [completed]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  install:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - name: Wait for the CDN to serve the new site
+        shell: bash
+        run: sleep 60
+
+      - name: Install exactly as documented (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: curl -LsSf https://zacharyslate.github.io/eis-studio/install.sh | sh
+
+      - name: Install exactly as documented (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: powershell -ExecutionPolicy ByPass -c "irm https://zacharyslate.github.io/eis-studio/install.ps1 | iex"
+
+      - name: Installed command works
+        shell: pwsh
+        run: |
+          $env:PATH = (Join-Path $HOME ".local/bin") + [IO.Path]::PathSeparator + $env:PATH
+          eis-studio --version
+          eis-studio --icon-path png
+
+      - name: App starts and responds
+        shell: pwsh
+        run: |
+          $env:PATH = (Join-Path $HOME ".local/bin") + [IO.Path]::PathSeparator + $env:PATH
+          $p = Start-Process eis-studio -ArgumentList "--no-browser","--port","8611" -PassThru -RedirectStandardOutput app.log -RedirectStandardError app.err
+          for ($i = 0; $i -lt 60; $i++) {
+            try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:8611/_stcore/health; if ($r.Content -eq "ok") { "healthy"; exit 0 } } catch {}
+            Start-Sleep 2
+          }
+          Get-Content app.log, app.err; exit 1
