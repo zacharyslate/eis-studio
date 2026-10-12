@@ -57,4 +57,4 @@ Every synthetic file has known parameters, documented in `tests/make_samples.py`
 
 ## Licences
 
-impedance.py and pyDRTtools are MIT-licensed. Choose a licence for this repository before making it public.
+EIS Studio is released under the MIT licence (see `LICENSE`). impedance.py and pyDRTtools are also MIT-licensed.
