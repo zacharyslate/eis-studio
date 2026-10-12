@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC, OUT = ROOT / "site_src", ROOT / "docs"
 VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "eisstudio" / "__init__.py").read_text()).group(1)
 
-NAV = [("install.html", "Install"), ("tutorial.html", "Tutorial"), ("theory.html", "Theory"), ("methods.html", "Methods"),
+NAV = [("install.html", "Install"), ("tutorial.html", "Tutorial"), ("measure.html", "Measuring"), ("theory.html", "Theory"),
+       ("methods.html", "Methods"),
        ("https://github.com/zacharyslate/eis-studio", "GitHub")]
 MARK = ('<svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20" '
         'fill="none" stroke="#D55E00" stroke-width="2.4" stroke-linecap="round"/>'

@@ -1,0 +1,182 @@
+<!-- title: Measuring impedance well: EIS Studio -->
+<!-- description: How to set up an impedance measurement on a solid electrolyte: sample and cell preparation, wiring, cable inductance and stray capacitance, excitation amplitude and linearity, frequency range, instrument settings, checks and what to report. -->
+<div class="page-head">
+  <h1>Measuring impedance well</h1>
+  <p>Most bad impedance results are decided before the analysis starts: by the sample, the wiring and a few instrument settings. This guide covers what to set, why, and how to recognise each problem in a spectrum. It is written for ionic conductivity measurements on solid electrolyte pellets, and most of it applies to any EIS experiment.</p>
+  <ul class="toc" aria-label="On this page">
+    <li><a href="#sample">Sample and cell</a></li>
+    <li><a href="#wiring">Wiring</a></li>
+    <li><a href="#window">Instrument limits</a></li>
+    <li><a href="#inductance">Lead inductance</a></li>
+    <li><a href="#amplitude">Excitation amplitude</a></li>
+    <li><a href="#frequency">Frequency range</a></li>
+    <li><a href="#settings">Settings at a glance</a></li>
+    <li><a href="#checks">Checks and reporting</a></li>
+    <li><a href="#refs">References</a></li>
+  </ul>
+</div>
+
+<div class="theory">
+
+<section id="sample" aria-labelledby="sample-h">
+  <h2 id="sample-h">Prepare the sample and the cell</h2>
+  <div class="prose">
+    <p>The measured conductivity belongs to the pellet you made, not only to the material. An interlaboratory study sent the same thiophosphate electrolytes to several groups and found a spread of 35–50 % (relative standard deviation) in the reported room-temperature conductivities, and up to 4.5 mS cm⁻¹ between labs for the fastest sample (Ohno et al., 2020). The factors that study identified are the ones to control:</p>
+    <ul>
+      <li><strong>Density.</strong> Conductivity tended to rise with relative density. Measure and report it: geometric density from mass and dimensions, against the crystallographic density.</li>
+      <li><strong>Pressure during the measurement.</strong> With stainless-steel contacts the conductivity rose with applied pressure. If your cell applies pressure, keep it fixed, report it, and ideally measure at more than one value.</li>
+      <li><strong>Atmosphere and history.</strong> Moisture and oxygen in the glovebox, solvents, and relaxation after pressing all change the result. Note the atmosphere and the time between pressing and measuring.</li>
+      <li><strong>Geometry.</strong> Measure the thickness in the state you measure in (under load if the cell is under load), and use the electrode contact area, not the pellet area, if they differ (see the <a href="theory.html#conductivity">conductivity calculation</a>).</li>
+    </ul>
+    <p>The same study found no clear influence of the contacting material, cell constant, pellet thickness or excitation voltage across the range the labs used. Those are not free choices, but they matter less than density and pressure.</p>
+  </div>
+</section>
+
+<section id="wiring" aria-labelledby="wiring-h">
+  <h2 id="wiring-h">Wire the cell</h2>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_gfig_wiring.html}}</div>
+    <figcaption><b>Two-electrode connection with four leads.</b> Working (WE) and working-sense (WS) on one electrode, counter (CE) and reference (RE) on the other, each pair joined at the electrode itself.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>A pellet between two electrodes is measured in two-electrode mode: WE and WS go to one electrode, CE and RE to the other (Gamry, <em>Two, Three and Four Electrode Experiments</em>). Join each sense lead to its current lead <em>at the electrode</em>, not at the instrument end. The sense leads carry almost no current, so the resistance of the current leads then stays out of the measured voltage.</p>
+    <ul>
+      <li><strong>Keep leads short.</strong> A straight 1 mm wire has an inductance of about 146 nH per 10 cm, and a 10 cm lead adds about 0.9 pF of stray capacitance (BioLogic, AN-5).</li>
+      <li><strong>Twist the pairs.</strong> Twist the two current-carrying leads together and the two sense leads together. Opposite currents in a twisted pair cancel each other's magnetic field; BioLogic measured residual coupling of about 25 nH after twisting. Run the pairs away from each other and approach the cell from opposite sides (Gamry, <em>Accuracy Contour Plots</em>).</li>
+      <li><strong>Clean, firm contacts.</strong> Avoid worn or corroded crocodile clips, and make sure nothing moves during the sweep: a moving sense lead picks up voltage (BioLogic, AN-5).</li>
+      <li><strong>Faraday cage for high impedance.</strong> A grounded cage removes 50/60 Hz pick-up and becomes important when the measured current falls below about 100 nA (Gamry). It also adds some stray capacitance to ground, so it helps most at low and intermediate frequencies.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="window" aria-labelledby="window-h">
+  <h2 id="window-h">Know where your instrument can be trusted</h2>
+  <div class="prose">
+    <p>Every impedance analyser has a region of |Z| and frequency where it meets its stated accuracy. Manufacturers publish this as an <strong>accuracy contour plot</strong>, which depends on the cable and cell you use (Gamry). Outside that region, the instrument still returns numbers; they are just not right.</p>
+  </div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_gfig_window.html}}</div>
+    <figcaption><b>Four pellets against two typical limits</b> (1 mm thick, 10 mm diameter, ε<sub>r</sub> = 30, blocking electrodes). At high frequency, very conductive samples run into the lead inductance (|Z| = ωL) and very resistive ones into stray capacitance (|Z| = 1/ωC). The limits drawn are illustrative values; use your own instrument's accuracy contour plot.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>The figure shows the two ways a solid electrolyte measurement leaves the trusted region:</p>
+    <ul>
+      <li><strong>Very conductive or thin samples have small |Z|</strong>, so at high frequency the cable inductance is a large fraction of the signal. Make the sample thicker (a higher cell constant L/A raises R) and the leads shorter.</li>
+      <li><strong>Very resistive samples have large |Z|</strong>, so at high frequency the stray capacitance of cables and holder carries a large share of the current. This mostly corrupts fitted capacitances and permittivities rather than the resistance. Use shielded cables and a thinner sample with a larger electrode area.</li>
+    </ul>
+    <p>Many analysers can measure and subtract the cell cables and holder. <strong>Open-circuit compensation</strong> (electrodes apart) removes the stray capacitance in parallel with the sample. <strong>Short-circuit compensation</strong> (electrodes shorted) removes the series inductance and resistance of the leads and is needed for low-impedance samples. A further load measurement on a known component is recommended for high-frequency work (BioLogic, AN-4). Repeat the compensation whenever you change the cable or holder.</p>
+  </div>
+</section>
+
+<section id="inductance" aria-labelledby="ind-h">
+  <h2 id="ind-h">Lead inductance: recognise it and remove it</h2>
+  <div class="prose">
+    <p>An inductance in series with the sample adds +jωL to the impedance. It grows with frequency, so it shows at the top of the sweep: the spectrum bends below the real axis, the phase heads toward +90° and |Z| rises with slope +1 on a Bode plot (Gamry). Its size is easy to estimate:</p>
+  </div>
+  <div class="eq">\[ Z_L = j\omega L, \qquad \omega L = 2\pi \times 7\ \mathrm{MHz} \times 1\ \mu\mathrm{H} = 44\ \Omega \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_gfig_ind.html}}</div>
+    <figcaption><b>The same pellet measured with three lead inductances</b> (bulk 30 Ω, grain boundary 40 Ω with its arc near 1.3 MHz, blocking electrodes; 7 MHz to 1 Hz). The inductive tail is obvious; the damage to the grain-boundary arc is easier to miss.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>To see what this does to the numbers, the spectra above (with 0.2 % noise) were fitted in EIS Studio. Without an inductor in the circuit, 1 µH turned the bulk and grain-boundary resistances of 30 and 40 Ω into 41.9 and 26.6 Ω. The total (68.5 Ω) was still within 2 %, but the split was off by 40 %, and the residuals reached 78 %. Adding an inductor in series (<code>L0-R0-p(R1,CPE1)-CPE2</code>) recovered 29.8 and 40.3 Ω.</p>
+    <ul>
+      <li>For <strong>total conductivity</strong>, lead inductance is usually a nuisance rather than a disaster.</li>
+      <li>For separating <strong>bulk and grain boundary</strong>, or anything else near the top of the frequency range, it can be decisive. Either include L in the circuit, or remove the points with Z″ &gt; 0 (an option in EIS Studio's data window and DRT settings). Large residuals at the highest frequencies are the warning sign.</li>
+      <li>A high-frequency inductive tail from a pellet cell is the wiring, not the material. (Some electrochemical systems show genuine inductive loops at low frequency, from adsorbed intermediates, for example. That is a different phenomenon.)</li>
+    </ul>
+  </div>
+</section>
+
+<section id="amplitude" aria-labelledby="amp-h">
+  <h2 id="amp-h">Choose the excitation amplitude</h2>
+  <div class="prose">
+    <p>Impedance assumes that the current responds linearly to the voltage. A larger amplitude gives a better signal-to-noise ratio, but beyond some point the response stops being linear. Then part of the current appears at harmonics of the excitation frequency, and the impedance at the fundamental is no longer the small-signal impedance (BioLogic, AN-65).</p>
+    <p>Charge transfer at an electrode is the usual limit, because its current depends exponentially on the overpotential η through the Butler–Volmer equation. The exponentials are only linear for overpotentials well below the thermal voltage RT/F, which is 25.7 mV at 25 °C:</p>
+  </div>
+  <div class="eq">\[ i = i_0\left[e^{\alpha F\eta/RT} - e^{-(1-\alpha)F\eta/RT}\right] \;\approx\; i_0\,\frac{F\eta}{RT} \quad\text{only if}\quad |\eta| \ll \frac{RT}{F} = 25.7\ \mathrm{mV} \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_gfig_lin.html}}</div>
+    <figcaption><b>Harmonic distortion of the current through a Butler–Volmer interface</b> at 25 °C, computed for a sinusoidal overpotential. Symmetric kinetics (α = 0.5) stay below 1 % up to about 18 mV rms. Asymmetric kinetics (α = 0.3) produce 5.5 % distortion already at 10 mV rms, because they generate even harmonics.</figcaption>
+  </figure>
+  <div class="prose">
+    <ul>
+      <li><strong>Electrode reactions and interfaces:</strong> stay at or below about 10 mV rms, the usual practice (Lazanas &amp; Prodromidis, 2023). As the figure shows, 10 mV is not automatically safe; check it.</li>
+      <li><strong>Bulk ionic conductivity with blocking electrodes:</strong> ion transport through the electrolyte is ohmic at these small fields. The resistance you need, at the high-frequency end, is therefore much less sensitive to amplitude, and the interlaboratory study found no strong trend with excitation voltage (Ohno et al., 2020). Larger amplitudes, up to about 100 mV rms, can rescue the signal from a very resistive sample, with the caveat that large excitations may alter the sample (Gamry).</li>
+      <li><strong>Too small is also a problem.</strong> At very low amplitude the result is dominated by noise (BioLogic, AN-65).</li>
+      <li><strong>rms or peak?</strong> Instruments specify amplitude differently. For a sine wave, peak = 1.41 × rms and peak-to-peak = 2.83 × rms (Gamry).</li>
+    </ul>
+    <p><strong>Check linearity instead of assuming it.</strong> Measure at your chosen amplitude and at half of it; the spectra should agree within the noise (Lazanas &amp; Prodromidis, 2023). Many instruments also report total harmonic distortion (BioLogic used 5 % as a practical limit) or can show the Lissajous figure of current against voltage, which loses its central symmetry when the response is non-linear (Metrohm Autolab, EIS06).</p>
+  </div>
+</section>
+
+<section id="frequency" aria-labelledby="freq-h">
+  <h2 id="freq-h">Frequency range and resolution</h2>
+  <div class="prose">
+    <ul>
+      <li><strong>Upper limit:</strong> start at the highest frequency your instrument and cabling handle accurately. Many electrochemical analysers stop at 1 MHz (Lazanas &amp; Prodromidis, 2023), while dedicated impedance analysers go higher. For fast conductors, the bulk arc lies above any of these anyway (see <a href="theory.html#pellet">why</a>); the top decade is there to define the high-frequency intercept, so it must be free of cable artefacts.</li>
+      <li><strong>Lower limit:</strong> with blocking electrodes, go low enough that the electrode spike is clearly established: several points on its straight part. That is often 1–0.1 Hz. Going lower costs time and adds nothing for the conductivity. For electrode processes and diffusion, go as low as the process requires; practical lower limits are usually 10–100 mHz (Lazanas &amp; Prodromidis, 2023).</li>
+      <li><strong>Points per decade:</strong> 10 per decade, logarithmically spaced, is a common default (Lazanas &amp; Prodromidis, 2023). Use more if you will compute a DRT or fit closely overlapping processes, and fewer only for quick screening.</li>
+      <li><strong>Direction:</strong> sweep from high to low frequency (Gamry). The fast part is then measured first, while the sample has had the least time to drift.</li>
+      <li><strong>Time:</strong> each point takes at least a few cycles of its frequency, so the lowest decade dominates. A point at 0.1 Hz needs tens of seconds, while the whole range above 1 kHz takes seconds. For reference, 60 points from 100 kHz to 0.1 Hz take roughly 2–3 minutes (Lazanas &amp; Prodromidis, 2023).</li>
+    </ul>
+  </div>
+</section>
+
+<section id="settings" aria-labelledby="set-h">
+  <h2 id="set-h">Settings at a glance</h2>
+  <div class="prose"><p>Starting points for a pellet between ion-blocking electrodes. Adjust them using the checks below, not by habit.</p></div>
+  <table class="ref settings">
+    <thead><tr><th>Setting</th><th>Starting point</th><th>Why, and how to check</th></tr></thead>
+    <tbody>
+      <tr><td>Mode</td><td>Potentiostatic, DC 0 V vs. open circuit</td><td>No DC current through blocking electrodes; the sample stays in its rest state.</td></tr>
+      <tr><td>Amplitude</td><td>10 mV rms; 20–50 mV rms for very resistive samples</td><td>Linear and above the noise. Repeat at half amplitude and compare.</td></tr>
+      <tr><td>Highest frequency</td><td>Instrument maximum, if the cabling allows</td><td>Defines the high-frequency intercept. Look for Z″ &gt; 0 or a phase heading toward +90°.</td></tr>
+      <tr><td>Lowest frequency</td><td>1 Hz, or 0.1 Hz if the spike isn't established</td><td>Enough of the electrode spike to anchor the fit; lower only costs time.</td></tr>
+      <tr><td>Points</td><td>10 per decade</td><td>Enough to resolve arcs; more for DRT.</td></tr>
+      <tr><td>Averaging</td><td>Instrument default; more cycles at low current</td><td>Reduces noise at high impedance at the cost of time.</td></tr>
+      <tr><td>Estimated Z / current range</td><td>Within a factor of about 5 of the real |Z|</td><td>Lets the instrument pick a good range quickly (Gamry). Watch for steps in the spectrum at range changes.</td></tr>
+      <tr><td>Temperature</td><td>Controlled, and logged</td><td>Equilibrate until repeat spectra agree, then measure.</td></tr>
+      <tr><td>Compensation</td><td>Open (and short, for low |Z|) with your actual cable and holder</td><td>Removes cable stray capacitance and inductance; redo it after any change to the setup.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="checks" aria-labelledby="checks-h">
+  <h2 id="checks-h">Check before you analyse, report what you did</h2>
+  <div class="prose">
+    <h3>Checks</h3>
+    <ul>
+      <li><strong>A dummy cell.</strong> Measure a known resistor or RC network through the same cable and holder. If that comes out wrong, so will the sample.</li>
+      <li><strong>Repeatability.</strong> Two consecutive spectra should be identical; if they aren't, the sample is still changing (Lazanas &amp; Prodromidis, 2023). This is how you know the temperature has equilibrated.</li>
+      <li><strong>Kramers–Kronig.</strong> Run the Lin-KK test in EIS Studio's Data tab. Residuals above the noise level point to drift or non-linearity, and their frequency tells you where.</li>
+      <li><strong>Linearity.</strong> Compare spectra at two amplitudes, as above.</li>
+      <li><strong>Temperature series.</strong> Measure on heating and on cooling: hysteresis means the sample changed. Below room temperature the bulk and grain-boundary arcs move into the measurable window. For the thiophosphates in the interlaboratory study, grain conductivity became resolvable below about −75 °C (Ohno et al., 2020).</li>
+    </ul>
+    <h3>What to report</h3>
+    <p>The interlaboratory study recommends measuring in triplicate with different cell constants and describing consolidation, contacts and measurement conditions in detail (Ohno et al., 2020). A complete record is:</p>
+    <ul>
+      <li>sample: composition, synthesis, pressing pressure and time, relative density, thickness, electrode area and material;</li>
+      <li>cell: pressure during the measurement, atmosphere, temperature and how it was controlled;</li>
+      <li>instrument: model, mode, amplitude (rms), frequency range, points per decade, compensation used;</li>
+      <li>analysis: the circuit or DRT settings, which resistance the conductivity uses (bulk or total), fit quality and Kramers–Kronig residuals;</li>
+      <li>result: mean and standard deviation over independent pellets, not one pellet's fit error.</li>
+    </ul>
+    <p>The settings file in every EIS Studio download records the analysis part of this automatically.</p>
+  </div>
+</section>
+
+<section id="refs" aria-labelledby="refs-h">
+  <h2 id="refs-h">References</h2>
+  <ul class="refs">
+    <li>S. Ohno, T. Bernges, J. Buchheim, … W. G. Zeier, How Certain Are the Reported Ionic Conductivities of Thiophosphate-Based Solid Electrolytes? An Interlaboratory Study, <em>ACS Energy Lett.</em> <strong>5</strong> (2020) 910–915. <a href="https://doi.org/10.1021/acsenergylett.9b02764">doi:10.1021/acsenergylett.9b02764</a></li>
+    <li>A. Ch. Lazanas, M. I. Prodromidis, Electrochemical Impedance Spectroscopy—A Tutorial, <em>ACS Meas. Sci. Au</em> <strong>3</strong> (2023) 162–193. <a href="https://doi.org/10.1021/acsmeasuresciau.2c00070">doi:10.1021/acsmeasuresciau.2c00070</a></li>
+    <li>Gamry Instruments, <a href="https://www.gamry.com/application-notes/EIS/accuracy-contour-plots-measurement-and-discussion/">Accuracy Contour Plots – Measurement and Discussion</a>; <a href="https://www.gamry.com/application-notes/instrumentation/two-three-four-electrode-experiments/">Two, Three and Four Electrode Experiments</a>; <a href="https://www.gamry.com/application-notes/EIS/potentiostatic-eis-tutorial/">Potentiostatic EIS tutorial</a> (application notes).</li>
+    <li>BioLogic, <a href="https://biologic.net/documents/eis-precautions-electrochemistry-battery-application-note-5/">Precautions for good impedance measurements (AN-5)</a>; <a href="https://biologic.net/documents/impedance-compensation-material-science-application-note-4">Impedance compensation (AN-4)</a>; <a href="https://biologic.net/documents/eis-quality-indicators-thd-electrochemistry-battery-corrosion-application-note-65/">EIS quality indicators: THD (AN-65)</a> (application notes).</li>
+    <li>Metrohm Autolab, <em>Electrochemical Impedance Spectroscopy, Part 6 – Measuring raw signals in EIS</em>, Application Note EIS06 (2011).</li>
+    <li>A. Lasia, <em>Electrochemical Impedance Spectroscopy and its Applications</em>, Springer (2014), for the theory of linearity and non-linear responses. <a href="https://doi.org/10.1007/978-1-4614-8933-7">doi:10.1007/978-1-4614-8933-7</a></li>
+  </ul>
+  <p class="prose small muted">The figures on this page are computed from circuit models and the Butler–Volmer equation with the parameters stated in their captions; the fitted numbers in the inductance section come from EIS Studio. Manufacturers' numbers apply to their instruments and test setups.</p>
+</section>
+
+</div>

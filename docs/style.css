@@ -333,3 +333,18 @@ table.ref td math { font-size: 1.05em; }
   .eq math[display="block"] { font-size: 1.08em; }
   .theory { padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* measurement guide figures */
+.eqplot .zone2 { fill: #F2F4F5; }
+.eqplot .cage { fill: none; stroke: #8A97A3; stroke-width: 1.4; stroke-dasharray: 8 5; }
+.eqplot .wire.sense { stroke: #005A8C; }
+.eqplot .twist { fill: none; stroke: var(--ink); stroke-width: 1.8; }
+.eqplot .twist.b { stroke: #005A8C; }
+.settings td:first-child { white-space: nowrap; font-weight: 700; }
+/* never let tables or long identifiers push the page sideways on phones */
+.prose code, .methods code, table.ref code { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .settings td:first-child { white-space: normal; }
+  table.ref { font-size: 0.85rem; }
+  table.ref th, table.ref td { padding: 0.45rem 0.4rem; }
+}
