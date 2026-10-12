@@ -1,0 +1,66 @@
+# Runs the real one-line installers on Windows, macOS and Linux, launches the installed app,
+# and runs the test suite. A green badge here means a new user's install works on that OS.
+name: install-and-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install with docs/install.sh (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          EIS_STUDIO_SOURCE: ${{ github.workspace }}
+        run: sh docs/install.sh
+
+      - name: Install with docs/install.ps1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EIS_STUDIO_SOURCE: ${{ github.workspace }}
+        run: ./docs/install.ps1
+
+      - name: Launch installed app and check it responds (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          eis-studio --version
+          eis-studio --no-browser --port 8601 > app.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:8601/_stcore/health; then echo " <- healthy"; exit 0; fi
+            sleep 2
+          done
+          cat app.log; exit 1
+
+      - name: Launch installed app and check it responds (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
+          eis-studio --version
+          $p = Start-Process eis-studio -ArgumentList "--no-browser","--port","8601" -PassThru -RedirectStandardOutput app.log -RedirectStandardError app.err
+          for ($i = 0; $i -lt 60; $i++) {
+            try { $r = Invoke-WebRequest -UseBasicParsing http://localhost:8601/_stcore/health; if ($r.Content -eq "ok") { "healthy"; exit 0 } } catch {}
+            Start-Sleep 2
+          }
+          Get-Content app.log, app.err; exit 1
+
+      - name: Test suite (parsers, ECM/DRT recovery, app end-to-end)
+        shell: pwsh   # available on all three runners; avoids Git-Bash path issues on Windows
+        run: |
+          $env:PATH = (Join-Path $HOME ".local/bin") + [IO.Path]::PathSeparator + $env:PATH
+          uv run --python 3.12 --extra test pytest -q tests/

@@ -11,27 +11,48 @@ A web app for analysing electrochemical impedance spectra:
 
 The sign convention is Z = Z′ + jZ″ with Z″ < 0 for capacitive behaviour; plots show −Z″.
 
-## Run locally
+## Install (users)
+
+Website with instructions, tutorial and demo video: **https://zacharyslate.github.io/eis-studio/**
+
+| OS | Command |
+|---|---|
+| Windows (PowerShell) | `powershell -ExecutionPolicy ByPass -c "irm https://zacharyslate.github.io/eis-studio/install.ps1 \| iex"` |
+| macOS / Linux | `curl -LsSf https://zacharyslate.github.io/eis-studio/install.sh \| sh` |
+
+The installer uses [uv](https://docs.astral.sh/uv/) to set up a private Python 3.12 and EIS Studio in an isolated environment, with no administrator rights needed. It then adds an `eis-studio` command and a desktop/Start-menu shortcut. The app opens in the browser and listens only on `127.0.0.1`, so spectra never leave the computer. To update, rerun the same command; to uninstall, run `uv tool uninstall eis-studio`.
+
+With an existing Python ≥ 3.10: `pip install "eis-studio @ https://github.com/zacharyslate/eis-studio/archive/refs/heads/main.zip"`, then `eis-studio`.
+
+## Develop
 
 ```bash
-python -m venv ZACH-venv
-source ZACH-venv/bin/activate          # Windows: ZACH-venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run app.py                   # opens http://localhost:8501
+python -m venv ZACH-venv && source ZACH-venv/bin/activate     # Windows: ZACH-venv\Scripts\activate
+pip install -e ".[test]"
+eis-studio                      # or: streamlit run app.py
 ```
 
-## Deploy as a website from GitHub (Streamlit Community Cloud)
+| Path | What it is |
+|---|---|
+| `eisstudio/` | the package: parsers, ECM, DRT, conductivity, plotting, exports, the Streamlit UI (`app.py`), launcher (`cli.py`), sample data, methods text |
+| `app.py` | entry point for hosted deployments (e.g. Streamlit Community Cloud) |
+| `docs/` | the website, served by GitHub Pages, including `install.sh` / `install.ps1` |
+| `site_src/`, `tools/` | website sources and build scripts: `python tools/make_hero.py && python tools/build_site.py` |
+| `tests/` | validation against synthetic spectra with known parameters, plus app end-to-end tests |
+| `.github/workflows/install-test.yml` | runs the real installers on Windows, macOS and Linux, launches the app and runs the tests on every push |
 
-1. Push this folder to a GitHub repository (the `ZACH-venv/` folder is git-ignored).
-2. Go to <https://share.streamlit.io>, sign in with GitHub, click **Create app** and pick the repository, branch and `app.py`.
-3. In **Advanced settings**, choose Python 3.12 or 3.13. `requirements.txt` installs the Python packages; `packages.txt` installs Liberation Sans, a metric-compatible substitute for Arial, so the figures use the intended font.
+### Publishing the website
 
-**Data privacy:** on Community Cloud, uploaded spectra are processed on Streamlit's servers. For unpublished or proprietary data, run it locally or on a lab server (`streamlit run app.py --server.address 0.0.0.0`) behind your institute's network. Nothing is stored after the session ends, but the upload still leaves your machine.
+In the repository's **Settings → Pages**, set **Source: Deploy from a branch**, branch `main`, folder `/docs`. The site and the install scripts are then served from `https://zacharyslate.github.io/eis-studio/`.
+
+### Optional: hosted version
+
+The same repository also deploys to [Streamlit Community Cloud](https://share.streamlit.io) (main file `app.py`; `requirements.txt` and `packages.txt` are picked up automatically) for people who only want to try it. Uploaded data is then processed on Streamlit's servers, so the local install remains the recommended route for unpublished data.
 
 ## Tests
 
 ```bash
-python tests/make_samples.py          # regenerates the synthetic files in sample_data/
+python tests/make_samples.py          # regenerates the synthetic files in eisstudio/sample_data/
 python -m pytest -q tests/            # 13 tests: parsers, ECM/DRT recovery of known parameters, app end-to-end
 ```
 

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial: EIS Studio</title>
+<meta name="description" content="Step-by-step tutorial: load an impedance spectrum, check it, fit an equivalent circuit, compute the DRT, get the conductivity and export figures with EIS Studio.">
+<meta property="og:title" content="Tutorial: EIS Studio">
+<meta property="og:description" content="Step-by-step tutorial: load an impedance spectrum, check it, fit an equivalent circuit, compute the DRT, get the conductivity and export figures with EIS Studio.">
+<meta property="og:image" content="https://zacharyslate.github.io/eis-studio/img/out-ecm.png">
+<link rel="icon" href="data:image/svg+xml,<svg viewBox='0 0 34 22' xmlns='http://www.w3.org/2000/svg'><path d='M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20' fill='none' stroke='%23D55E00' stroke-width='2.4' stroke-linecap='round'/><line x1='1' y1='20.5' x2='33' y2='20.5' stroke='%2315212B' stroke-width='1.4'/></svg>">
+<link rel="preload" href="fonts/spectral-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/atkinson-hyperlegible-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="inner">
+  <a class="wordmark" href="index.html"><svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20" fill="none" stroke="#D55E00" stroke-width="2.4" stroke-linecap="round"/><line x1="1" y1="20.5" x2="33" y2="20.5" stroke="#15212B" stroke-width="1.4"/></svg>EIS Studio</a>
+  <nav aria-label="Main"><a href="install.html">Install</a><a href="tutorial.html" aria-current="page">Tutorial</a><a href="methods.html">Methods</a><a href="https://github.com/zacharyslate/eis-studio">GitHub</a></nav>
+</div></header>
+<main id="main">
+<div class="page-head">
+  <h1>Tutorial</h1>
+  <p>A complete analysis, from file to figure, using the two-arc sample spectrum that ships with EIS Studio. Its true parameters are known, so you can compare your result with the right answer. It takes about ten minutes.</p>
+</div>
+
+<section class="section" style="padding-top:1.5rem" aria-label="Tutorial steps">
+  <ol class="steps">
+    <li>
+      <h3>Start EIS Studio and load a spectrum</h3>
+      <p class="prose">Start the app from its shortcut (see <a href="install.html">Install</a>). In the left panel, either upload your own file or choose <strong>synthetic_2arc.csv</strong> under “…or try a synthetic sample”. The sample was generated from R0 = 50 Ω, R1 = 200 Ω with a CPE (Q = 1×10⁻⁷, α = 0.9), and R2 = 500 Ω with a CPE (Q = 1×10⁻⁴, α = 0.8), plus 0.3 % noise.</p>
+      <figure class="shot"><img src="img/01-start.png" alt="EIS Studio start screen with the upload panel on the left" loading="lazy" width="1440" height="900"><figcaption>The start screen. File format, sign convention and column mapping are detected automatically; change them in the left panel only if the reported reading is wrong.</figcaption></figure>
+    </li>
+    <li>
+      <h3>Check how the file was read, and whether the data are consistent</h3>
+      <p class="prose">Under the title, EIS Studio lists which columns it used and anything it converted, such as decimal commas or a −Z″ column. The <strong>Data &amp; KK check</strong> tab shows the spectrum and the Lin-KK test. Residuals at the level of your instrument's noise, without a trend, mean the spectrum can be fitted meaningfully. A trend at low frequency usually means the cell drifted during the sweep.</p>
+      <figure class="shot"><img src="img/02-data.png" alt="Data tab showing the Nyquist and Bode plots and the Lin-KK result: mean residual 0.20 percent, consistent" loading="lazy" width="1025" height="788"><figcaption>Lin-KK mean residual 0.20 %, which matches the 0.3 % noise added to this sample.</figcaption></figure>
+      <p class="prose">Use <strong>Frequency window</strong> in the left panel to drop unreliable points, such as cable inductance at the top end or a drifting low-frequency tail.</p>
+    </li>
+    <li>
+      <h3>Enter your sample's dimensions</h3>
+      <p class="prose">Give the thickness and the diameter (or the electrode area), with their measurement uncertainties if you know them. They are used for the conductivity and, if you choose, for area-specific (Ω cm²) or resistivity (Ω cm) axes on every figure.</p>
+      <figure class="shot narrow"><img src="img/03-geometry.png" alt="Sample geometry inputs: thickness, diameter and their uncertainties" loading="lazy" width="300" height="544"></figure>
+    </li>
+    <li>
+      <h3>Choose a circuit and fit it</h3>
+      <p class="prose">In <strong>Equivalent circuit (ECM)</strong>, pick a preset or type a circuit: <code>-</code> joins elements in series and <code>p(a,b)</code> in parallel. For this sample, choose “Two arcs”. The table fills with starting values estimated from the data; edit them, tick <em>fixed</em> to hold a parameter, or narrow its bounds. Then press <strong>Fit circuit</strong>.</p>
+      <figure class="shot"><img src="img/04-ecm-setup.png" alt="Circuit preset, circuit string and the editable parameter table with initial values, fixed flags and bounds" loading="lazy" width="1025" height="636"></figure>
+      <div class="callout"><p><strong>Multi-start fits</strong> repeats the fit from several random starting points and keeps the best. If equally good fits disagree about a parameter, EIS Studio tells you that the data do not determine it. Take that warning seriously before reporting the value.</p></div>
+    </li>
+    <li>
+      <h3>Read the fit</h3>
+      <p class="prose">Check the fit quality line first: residuals near the noise level and the best minimum reached by most starting points. Then the parameters: R1 = 199.5 Ω and R2 = 500.2 Ω, against the true 200 and 500 Ω. For each R–CPE pair you also get the effective capacitance, which helps assign an arc to the bulk, grain boundaries or the electrode, and its characteristic frequency.</p>
+      <figure class="shot"><img src="img/05-ecm-results.png" alt="Fit quality, parameter table with standard errors, and effective capacitances" loading="lazy" width="1025" height="414"></figure>
+      <p class="prose">Under <strong>Conductivity</strong>, choose which resistances make up the ionic resistance: the bulk alone, or bulk plus grain boundary for the total conductivity.</p>
+      <figure class="shot"><img src="img/06-conductivity.png" alt="Conductivity result with the selected resistances and error budget" loading="lazy" width="1025" height="296"></figure>
+      <div class="callout warn"><p><strong>Solid electrolytes at room temperature.</strong> For fast ion conductors (mS cm⁻¹) the bulk arc is usually above the highest frequency your potentiostat measures. Then only the sum R0 + R1 is determined, and that sum is the resistance to use for the conductivity. EIS Studio warns when an arc's characteristic frequency lies outside your data.</p></div>
+    </li>
+    <li>
+      <h3>Compute the DRT</h3>
+      <p class="prose">The <strong>DRT</strong> tab finds the processes in your spectrum without assuming a circuit; it's a good way to decide how many elements your circuit needs. The defaults (Gaussian basis, combined Re–Im data, λ by generalised cross-validation) suit most spectra. Tick <em>Bayesian credible band</em> to see how well each part of γ(τ) is determined.</p>
+      <figure class="shot"><img src="img/08-drt-settings.png" alt="DRT settings: basis function, data used, inductance, regularisation, lambda selection" loading="lazy" width="1025" height="495"></figure>
+      <figure class="shot"><img src="img/09-drt-results.png" alt="DRT summary and peak table with time constants, frequencies and resistances" loading="lazy" width="1025" height="345"><figcaption>The two real processes come out at τ = 6 µs (183 Ω) and 24 ms (499 Ω). The two small peaks marked * are regularisation artefacts that appear beside depressed arcs.</figcaption></figure>
+      <div class="callout warn"><p><strong>Blocking electrodes.</strong> A capacitive tail has no finite DC resistance, which breaks the DRT model. Set <em>f min</em> above the start of the tail before computing the DRT; EIS Studio warns you if you forget.</p></div>
+    </li>
+    <li>
+      <h3>Export figures and data</h3>
+      <p class="prose">Set the figure width (single or double journal column), units, font size and format in <strong>Figures</strong> in the left panel. Each analysis then offers its composite figure, every single panel, CSV tables and a ZIP with everything in PNG, PDF and SVG plus a settings file.</p>
+      <figure class="shot"><img src="img/07-ecm-figures.png" alt="Composite figure of the circuit fit and the row of download buttons" loading="lazy" width="1025" height="799"></figure>
+    </li>
+  </ol>
+</section>
+
+<section class="section" aria-labelledby="next-h">
+  <h2 id="next-h">With your own data</h2>
+  <ul class="prose">
+    <li>Analyse one sweep at a time. Files with several cycles get a <strong>Sweep</strong> selector in the left panel.</li>
+    <li>If the Nyquist plot is dominated by a blocking-electrode tail, use <strong>Nyquist zoom</strong> under <strong>Figures</strong> to show the arcs.</li>
+    <li>Keep the settings file from each ZIP with your raw data; it records exactly how the analysis was done.</li>
+    <li>For the equations and conventions behind every number, see <a href="methods.html">Methods</a>.</li>
+  </ul>
+</section>
+
+</main>
+<footer class="site-footer"><div class="inner">
+  <span>EIS Studio 0.1.0. Free and open source under the MIT licence.</span>
+  <span><a href="https://github.com/zacharyslate/eis-studio">Source code</a> &nbsp; <a href="https://github.com/zacharyslate/eis-studio/issues">Report a problem</a></span>
+</div></footer>
+<script src="site.js" defer></script>
+</body>
+</html>

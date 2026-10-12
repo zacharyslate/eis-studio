@@ -23,12 +23,17 @@ if ! command -v uv >/dev/null 2>&1; then
     PATH="$HOME/.local/bin:$PATH"
   else
     say "Installing uv (Python package manager, https://docs.astral.sh/uv/)"
+    TMP_UV="$(mktemp)"
+    # download first, then run: a failed download must stop us, not pipe an error page into sh
     if command -v curl >/dev/null 2>&1; then
-      curl -LsSf https://astral.sh/uv/install.sh | sh
+      curl -LsSf https://astral.sh/uv/install.sh -o "$TMP_UV" || { echo "Could not download uv's installer." >&2; exit 1; }
     else
-      wget -qO- https://astral.sh/uv/install.sh | sh
+      wget -qO "$TMP_UV" https://astral.sh/uv/install.sh || { echo "Could not download uv's installer." >&2; exit 1; }
     fi
+    sh "$TMP_UV"
+    rm -f "$TMP_UV"
     PATH="$HOME/.local/bin:$PATH"
+    command -v uv >/dev/null 2>&1 || { echo "uv was not found after installing it; see https://docs.astral.sh/uv/" >&2; exit 1; }
   fi
   export PATH
 fi

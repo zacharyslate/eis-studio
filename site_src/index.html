@@ -1,0 +1,71 @@
+<!-- title: EIS Studio: equivalent circuits and DRT for impedance spectra -->
+<!-- description: Free, open-source app that fits equivalent circuits and computes the distribution of relaxation times (DRT) of electrochemical impedance spectra, calculates ionic conductivity, and exports publication figures. Runs on your computer. -->
+<div class="hero">
+  <h1>Impedance analysis that stays on your computer</h1>
+  <div class="hero-side">
+    <p class="lede">Fit any equivalent circuit, compute the distribution of relaxation times, and get the conductivity of your sample with figures ready for a paper.</p>
+    <p class="lede-sub">EIS Studio reads files straight from Gamry, BioLogic, ZView, VersaStudio, Autolab and other potentiostats, checks them with a Kramers–Kronig test, and opens in your web browser. It is free and open source.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="install.html">Install EIS Studio</a>
+      <a class="btn btn-quiet" href="#demo">Watch the demo</a>
+    </div>
+    <p class="small muted">Windows, macOS and Linux. One command; no Python installation needed.</p>
+  </div>
+</div>
+<figure class="hero-plot">
+  <div class="graph-paper">{{HERO_SVG}}</div>
+  <figcaption>A two-arc spectrum (circles) and its fitted circuit R0-p(R1,CPE1)-p(R2,CPE2), drawn the way EIS Studio draws it: the same scale on both axes and frequency decades marked.<span class="phone-only"> Axes: Z′ (horizontal) and −Z″ (vertical), both in Ω.</span></figcaption>
+</figure>
+
+<section class="section video-block" id="demo" aria-labelledby="demo-h">
+  <h2 id="demo-h">A full analysis in 90 seconds</h2>
+  <p class="muted">Upload a BioLogic file, check it, fit a circuit, compute the DRT and download the results. The recording has captions and no sound.</p>
+  <video controls preload="metadata" poster="media/demo-poster.jpg" playsinline>
+    <source src="media/eis-studio-demo.webm" type="video/webm">
+    <source src="media/eis-studio-demo.mp4" type="video/mp4">
+    Your browser cannot play this video. <a href="media/eis-studio-demo.mp4">Download the demo (MP4, 2.6 MB)</a>.
+  </video>
+</section>
+
+<section class="section" aria-labelledby="out-h">
+  <h2 id="out-h">What you take away</h2>
+  <p class="prose">Every result downloads as CSV tables, plus figures in PNG, TIFF, PDF or SVG at journal column widths. Text stays editable in Illustrator or Inkscape. A settings file records the circuit, parameters and library versions, so a figure can be regenerated exactly.</p>
+  <div class="outputs">
+    <figure class="plot-card">
+      <img src="img/out-ecm.png" alt="Four-panel figure: Nyquist plot with fit, Bode modulus and phase with fit, and residuals within about one percent." loading="lazy" width="1190" height="928">
+      <figcaption>Equivalent-circuit fit: Nyquist, Bode modulus and phase, and residuals as a percentage of |Z|.</figcaption>
+    </figure>
+    <figure class="plot-card">
+      <img src="img/out-drt.png" alt="Five-panel figure: Nyquist with DRT fit, distribution of relaxation times with labelled peaks and a frequency axis, Bode plots and residuals." loading="lazy" width="1190" height="1130">
+      <figcaption>DRT: γ(τ) with labelled peaks and a frequency axis, the reconstructed spectrum, and residuals.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="cap-h">
+  <h2 id="cap-h">What it does</h2>
+  <dl class="capabilities">
+    <dt>Reads your files</dt>
+    <dd>Gamry .DTA, ZView .z, BioLogic .mpt (including decimal-comma exports and multi-cycle files), VersaStudio, Parstat, Autolab and CH Instruments exports, and any CSV, text or Excel table. It reports how it read the columns and the sign of Z″, and you can override either.</dd>
+    <dt>Checks the data</dt>
+    <dd>A Lin-KK Kramers–Kronig test before any fitting, because drift or non-linearity makes every fitted parameter meaningless.</dd>
+    <dt>Fits circuits</dt>
+    <dd>Any circuit built from R, C, L, CPE, Warburg, Gerischer and transmission-line elements. You can edit starting values, fix parameters and set bounds. It refits from several starting points and warns when a parameter is not determined by your data, for example when an arc lies outside the measured frequency range.</dd>
+    <dt>Computes the DRT</dt>
+    <dd>Regularised DRT with every pyDRTtools option: six ways to choose λ, a Bayesian credible band, and inductance handling. Peaks are located and integrated into resistances and time constants, and likely artefact peaks are flagged.</dd>
+    <dt>Gives conductivity</dt>
+    <dd>Enter thickness and diameter (or area). σ = L/(R·A), with the uncertainty propagated from the fit and from your measurement of the sample.</dd>
+  </dl>
+</section>
+
+<section class="section" aria-labelledby="priv-h">
+  <h2 id="priv-h">Your data stays with you</h2>
+  <div class="callout">
+    <p>EIS Studio runs on your own computer and only listens to your own machine. Your spectra are never uploaded to a server, which matters for unpublished results and for data under confidentiality agreements.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="cite-h">
+  <h2 id="cite-h">Built on published methods</h2>
+  <p class="prose">Circuit fitting uses <a href="https://impedancepy.readthedocs.io">impedance.py</a> and the DRT uses <a href="https://github.com/ciuccislab/pyDRTtools">pyDRTtools</a> from the Ciucci group. If EIS Studio contributes to a paper, please cite those packages and the methods you used; the full reference list is on the <a href="methods.html">methods page</a>. To cite EIS Studio itself: Z. Warren, <em>EIS Studio</em>, version {{VERSION}} (2026), https://github.com/zacharyslate/eis-studio.</p>
+</section>

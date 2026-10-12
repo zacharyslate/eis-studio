@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Methods and references: EIS Studio</title>
+<meta name="description" content="Equations, conventions and references used by EIS Studio for equivalent-circuit fitting, DRT, Kramers-Kronig validation and conductivity.">
+<meta property="og:title" content="Methods and references: EIS Studio">
+<meta property="og:description" content="Equations, conventions and references used by EIS Studio for equivalent-circuit fitting, DRT, Kramers-Kronig validation and conductivity.">
+<meta property="og:image" content="https://zacharyslate.github.io/eis-studio/img/out-ecm.png">
+<link rel="icon" href="data:image/svg+xml,<svg viewBox='0 0 34 22' xmlns='http://www.w3.org/2000/svg'><path d='M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20' fill='none' stroke='%23D55E00' stroke-width='2.4' stroke-linecap='round'/><line x1='1' y1='20.5' x2='33' y2='20.5' stroke='%2315212B' stroke-width='1.4'/></svg>">
+<link rel="preload" href="fonts/spectral-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/atkinson-hyperlegible-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header"><div class="inner">
+  <a class="wordmark" href="index.html"><svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20" fill="none" stroke="#D55E00" stroke-width="2.4" stroke-linecap="round"/><line x1="1" y1="20.5" x2="33" y2="20.5" stroke="#15212B" stroke-width="1.4"/></svg>EIS Studio</a>
+  <nav aria-label="Main"><a href="install.html">Install</a><a href="tutorial.html">Tutorial</a><a href="methods.html" aria-current="page">Methods</a><a href="https://github.com/zacharyslate/eis-studio">GitHub</a></nav>
+</div></header>
+<main id="main">
+<div class="page-head"><h1>Methods and references</h1><p>The equations, conventions and sources behind every number EIS Studio reports. The app shows the same text in its “Methods &amp; references” tab.</p></div>
+<section class="section methods prose" style="padding-top:1rem"><h3>Conventions</h3>
+<ul>
+<li>Impedance: <strong>Z = Z′ + jZ″</strong>, with Z″ &lt; 0 for capacitive behaviour. Plots show −Z″. Every export carries both <code>Zim_ohm</code> (signed) and <code>minus_Zim_ohm</code>.</li>
+<li>Frequencies are sorted high → low after import. Files containing several sweeps (e.g. EC-Lab cycles) are split; pick one in the sidebar.</li>
+<li>Residuals are relative to the modulus: Δ_re = (Z′ − Z′_fit)/|Z|, Δ_im = (Z″ − Z″_fit)/|Z|, in %.</li>
+</ul>
+<h3>Recommended workflow</h3>
+<ol>
+<li><strong>Validate the data</strong> with the Lin-KK test (Data tab). Non-KK-consistent data cannot be fitted meaningfully by any linear model.</li>
+<li><strong>Crop the frequency window</strong>. Remove inductive/cable artefacts at the top end and, for DRT, any blocking-electrode tail at the bottom end.</li>
+<li><strong>DRT first, ECM second.</strong> Use the DRT to count processes and locate their time constants without assuming a circuit, then build the circuit with that many elements.</li>
+<li><strong>Report the fit quality</strong> (residual plot, pseudo-χ²) together with the parameters.</li>
+</ol>
+<h3>ECM (impedance.py)</h3>
+<p>Complex non-linear least squares via <code>impedance.models.circuits.fitting.circuit_fit</code> (SciPy <code>curve_fit</code>). Weighting options: modulus (σ = |Z|), proportional (σ = |Z′|, |Z″|), unit. Multi-start refits from log-perturbed initial values (×10^±1.5; CPE exponents in [0.5, 1]) and keeps the lowest objective. If several starts reach equally good minima with different parameter values, those parameters are reported as <strong>not identifiable</strong>.</p>
+<p>Pseudo-χ² = Σ[(Δ_re)² + (Δ_im)²], modulus-weighted, in the sense used by Boukamp (1995).</p>
+<p>For parallel R–CPE pairs: C_eff = Q^(1/α) R^((1−α)/α), f_c = 1/[2π(RQ)^(1/α)] (Hsu &amp; Mansfeld 2001). For R–C pairs, f_c = 1/(2πRC).</p>
+<h3>DRT (pyDRTtools)</h3>
+<p>Z(f) = R∞ + j2πfL + ∫ γ(ln τ)/(1 + j2πfτ) d ln τ. Solved by ridge (Tikhonov) regression with radial-basis-function discretisation and a non-negativity constraint (Wan et al. 2015; Saccoccio et al. 2014). λ is chosen by GCV, mGCV, rGCV, L-curve, Re–Im discrepancy or k-fold cross-validation, or entered manually (Maradesa et al. 2023). The optional credible band samples the truncated-Gaussian posterior by Hamiltonian Monte Carlo (pyDRTtools <code>Bayesian_run</code>; Ciucci &amp; Chen 2015; Effat &amp; Ciucci 2017).</p>
+<ul>
+<li><strong>Peak resistance</strong> = area under the peak over ln τ, split at the minima of γ. <strong>Peak frequency</strong> f = 1/(2πτ).</li>
+<li><strong>R_pol</strong> = ∫γ d ln τ over the whole computed τ range (which extends half a decade beyond the data on each side; the shaded bands in the γ plot).</li>
+<li><strong>What the DRT cannot do.</strong> A capacitive tail from blocking electrodes has no finite DC resistance, so it violates the DRT model and produces a large artefact at long τ: crop it. Small satellite peaks next to a large peak are typical regularisation artefacts of depressed (CPE-like) arcs. Never interpret a peak from a single spectrum without checking how it responds to temperature, atmosphere or bias.</li>
+</ul>
+<p><strong>Wrapper fixes for pyDRTtools 0.2:</strong> the package imports its Qt GUI on import (stubbed here); <code>induct_used = 2</code> ("discard inductive data") behaves like 0 (we remove Z″ &gt; 0 points ourselves); the "Re Data" branch references a misspelled attribute (worked around); in "Im Data" mode R∞ is estimated after the fit.</p>
+<p><strong>Fix for impedance.py 1.7.1:</strong> <code>linKK</code> evaluates a string built from NumPy reprs, which fails under NumPy ≥ 2 (<code>np.float64(...)</code> is undefined in its eval namespace); a corrected <code>eval_linKK</code> is patched in.</p>
+<h3>Conductivity</h3>
+<p>σ = L/(R·A), with L the thickness and A the electrode area (π d²/4 for a disc). Relative uncertainties add in quadrature: (δσ/σ)² = (δL/L)² + (δR/R)² + (δA/A)², with δA/A = 2 δd/d. For a solid-electrolyte pellet at room temperature the bulk arc often lies above the highest measured frequency. Then "R0" (ECM) or R∞ (DRT) <em>is</em> the bulk (or bulk + grain-boundary) resistance, and the high-frequency intercept should be reported as such, not as a contact resistance.</p>
+<h3>References</h3>
+<ul>
+<li>B. A. Boukamp, A Linear Kronig-Kramers Transform Test for Immittance Data Validation, <em>J. Electrochem. Soc.</em> <strong>142</strong> (1995) 1885. <a href="https://doi.org/10.1149/1.2044210">doi:10.1149/1.2044210</a></li>
+<li>M. Schönleber, D. Klotz, E. Ivers-Tiffée, A Method for Improving the Robustness of linear Kramers-Kronig Validity Tests, <em>Electrochim. Acta</em> <strong>131</strong> (2014) 20–27. <a href="https://doi.org/10.1016/j.electacta.2014.01.034">doi:10.1016/j.electacta.2014.01.034</a></li>
+<li>C. H. Hsu, F. Mansfeld, Concerning the Conversion of the Constant Phase Element Parameter Y0 into a Capacitance, <em>Corrosion</em> <strong>57</strong> (2001) 747.</li>
+<li>J. T. S. Irvine, D. C. Sinclair, A. R. West, Electroceramics: Characterization by Impedance Spectroscopy, <em>Adv. Mater.</em> <strong>2</strong> (1990) 132–138. <a href="https://doi.org/10.1002/adma.19900020304">doi:10.1002/adma.19900020304</a></li>
+<li>T. H. Wan, M. Saccoccio, C. Chen, F. Ciucci, Influence of the discretization methods on the distribution of relaxation times deconvolution: Implementing radial basis functions with DRTtools, <em>Electrochim. Acta</em> <strong>184</strong> (2015) 483–499.</li>
+<li>M. Saccoccio, T. H. Wan, C. Chen, F. Ciucci, Optimal regularization in distribution of relaxation times applied to electrochemical impedance spectroscopy: Ridge and lasso regression methods, <em>Electrochim. Acta</em> <strong>147</strong> (2014) 470–482.</li>
+<li>A. Maradesa, B. Py, T. H. Wan, M. B. Effat, F. Ciucci, Selecting the Regularization Parameter in the Distribution of Relaxation Times, <em>J. Electrochem. Soc.</em> <strong>170</strong> (2023) 030502.</li>
+<li>F. Ciucci, C. Chen, Analysis of electrochemical impedance spectroscopy data using the distribution of relaxation times: A Bayesian and hierarchical Bayesian approach, <em>Electrochim. Acta</em> <strong>167</strong> (2015) 439–454.</li>
+<li>M. B. Effat, F. Ciucci, Bayesian and Hierarchical Bayesian Based Regularization for Deconvolving the Distribution of Relaxation Times from Electrochemical Impedance Spectroscopy Data, <em>Electrochim. Acta</em> <strong>247</strong> (2017) 1117–1129. <a href="https://doi.org/10.1016/j.electacta.2017.07.050">doi:10.1016/j.electacta.2017.07.050</a></li>
+<li>M. D. Murbach, B. Gerwe, N. Dawson-Elli, L. Tsui, impedance.py: A Python package for electrochemical impedance analysis, <em>J. Open Source Softw.</em> <strong>5</strong> (2020) 2349. <a href="https://doi.org/10.21105/joss.02349">doi:10.21105/joss.02349</a></li>
+<li>pyDRTtools: <a href="https://github.com/ciuccislab/pyDRTtools">github.com/ciuccislab/pyDRTtools</a> (MIT licence). impedance.py: <a href="https://impedancepy.readthedocs.io">impedancepy.readthedocs.io</a> (MIT licence).</li>
+</ul></section>
+</main>
+<footer class="site-footer"><div class="inner">
+  <span>EIS Studio 0.1.0. Free and open source under the MIT licence.</span>
+  <span><a href="https://github.com/zacharyslate/eis-studio">Source code</a> &nbsp; <a href="https://github.com/zacharyslate/eis-studio/issues">Report a problem</a></span>
+</div></footer>
+<script src="site.js" defer></script>
+</body>
+</html>

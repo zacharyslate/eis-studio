@@ -1,0 +1,83 @@
+<!-- title: Install EIS Studio -->
+<!-- description: Install EIS Studio on Windows, macOS or Linux with one command. No Python or administrator rights needed. -->
+<div class="page-head">
+  <h1>Install EIS Studio</h1>
+  <p>One command installs EIS Studio together with its own private copy of Python. You don't need Python, administrator rights or any other software. Besides the app's own folder, the installer only adds a shortcut and makes the <code>eis-studio</code> command available in new terminal windows.</p>
+</div>
+
+<section class="section" style="padding-top:1rem" aria-label="Installation instructions">
+  <div class="tabs">
+    <div role="tablist" aria-label="Operating system">
+      <button role="tab" id="t-win" data-os="windows" aria-controls="p-win">Windows</button>
+      <button role="tab" id="t-mac" data-os="macos" aria-controls="p-mac">macOS</button>
+      <button role="tab" id="t-lin" data-os="linux" aria-controls="p-lin">Linux</button>
+    </div>
+    <p class="os-note small muted"></p>
+
+    <div role="tabpanel" id="p-win" aria-labelledby="t-win">
+      <ol class="steps">
+        <li><h3>Open PowerShell</h3>
+          <p>Click Start, type <strong>PowerShell</strong> and open <strong>Windows PowerShell</strong>. A normal window is fine; you don't need "Run as administrator".</p></li>
+        <li><h3>Paste this command and press Enter</h3>
+          <div class="cmd"><pre><code>powershell -ExecutionPolicy ByPass -c "irm https://zacharyslate.github.io/eis-studio/install.ps1 | iex"</code></pre></div>
+          <p class="small muted">The first install downloads the scientific libraries and takes a few minutes, needing about 1 GB of free disk space.</p></li>
+        <li><h3>Start EIS Studio</h3>
+          <p>Double-click <strong>EIS Studio</strong> on your Desktop or in the Start Menu. A small window opens, then the app appears in your web browser. Keep the small window open while you work, and close it to quit.</p></li>
+      </ol>
+    </div>
+
+    <div role="tabpanel" id="p-mac" aria-labelledby="t-mac" hidden>
+      <ol class="steps">
+        <li><h3>Open Terminal</h3>
+          <p>Press <kbd>⌘</kbd> + <kbd>Space</kbd>, type <strong>Terminal</strong> and press Enter.</p></li>
+        <li><h3>Paste this command and press Return</h3>
+          <div class="cmd"><pre><code>curl -LsSf https://zacharyslate.github.io/eis-studio/install.sh | sh</code></pre></div>
+          <p class="small muted">The first install takes a few minutes and needs about 1 GB of free disk space. It works on Apple silicon and Intel Macs, including older macOS versions: it picks library builds made for your system instead of compiling anything.</p></li>
+        <li><h3>Start EIS Studio</h3>
+          <p>Double-click <strong>EIS Studio.command</strong> on your Desktop, or type <code>eis-studio</code> in a new Terminal window. The app opens in your web browser. Keep the Terminal window open while you work, and close it to quit.</p></li>
+      </ol>
+    </div>
+
+    <div role="tabpanel" id="p-lin" aria-labelledby="t-lin" hidden>
+      <ol class="steps">
+        <li><h3>Open a terminal</h3>
+          <p>Use your desktop's terminal application. <code>curl</code> or <code>wget</code> must be available; it is on almost all distributions.</p></li>
+        <li><h3>Run the installer</h3>
+          <div class="cmd"><pre><code>curl -LsSf https://zacharyslate.github.io/eis-studio/install.sh | sh</code></pre></div>
+          <p class="small muted">The first install takes a few minutes and needs about 1 GB of free disk space.</p></li>
+        <li><h3>Start EIS Studio</h3>
+          <p>Choose <strong>EIS Studio</strong> from your applications menu, or type <code>eis-studio</code> in a new terminal. The app opens in your browser at <code>http://localhost:8501</code>.</p></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="after-h">
+  <h2 id="after-h">After installing</h2>
+  <div class="prose">
+    <h3>Update to the latest version</h3>
+    <p>Run the same install command again. It replaces the installed version with the current one.</p>
+    <h3>Uninstall</h3>
+    <div class="cmd"><pre><code>uv tool uninstall eis-studio</code></pre></div>
+    <p>Then delete the EIS Studio shortcut. The installer also put <a href="https://docs.astral.sh/uv/">uv</a>, the small tool that manages the installation, in your user folder. Remove it as described in <a href="https://docs.astral.sh/uv/getting-started/installation/#uninstallation">uv's uninstall instructions</a> if you don't use it for anything else.</p>
+    <h3>What the installer does</h3>
+    <p>It installs uv if it is missing. uv then downloads Python 3.12 and EIS Studio's libraries into a separate folder in your user account and creates the <code>eis-studio</code> command and a shortcut. You can read the scripts before running them: <a href="install.ps1">install.ps1</a> for Windows and <a href="install.sh">install.sh</a> for macOS and Linux.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="trouble-h">
+  <h2 id="trouble-h">If something goes wrong</h2>
+  <details><summary>“eis-studio” is not recognised, or “command not found”</summary>
+    <p>Close the terminal and open a new one; the installer adds the command's folder to your PATH, and open windows don't see the change. The desktop shortcut works either way.</p></details>
+  <details><summary>The browser didn't open</summary>
+    <p>Open <code>http://localhost:8501</code> yourself. If that port was busy, the terminal window shows the address it used instead (8502, 8503, …).</p></details>
+  <details><summary>The download fails on a university or company network</summary>
+    <p>Networks that inspect HTTPS traffic can block the download. Try from another network, or ask IT to allow <code>astral.sh</code>, <code>github.com</code>, <code>pypi.org</code> and <code>files.pythonhosted.org</code>.</p></details>
+  <details><summary>Antivirus quarantines eis-studio.exe (Windows)</summary>
+    <p>The launcher is a small, unsigned program created on your own computer during installation, and some antivirus products flag those. Restore it, or allow the folder <code>%USERPROFILE%\.local\bin</code>.</p></details>
+  <details><summary>I already use Python and prefer pip</summary>
+    <p>Install into any environment with Python 3.10 or newer, then start it with <code>eis-studio</code>:</p>
+    <div class="cmd"><pre><code>pip install "eis-studio @ https://github.com/zacharyslate/eis-studio/archive/refs/heads/main.zip"</code></pre></div></details>
+  <details><summary>Something else</summary>
+    <p><a href="https://github.com/zacharyslate/eis-studio/issues">Open an issue on GitHub</a> with your operating system and the text shown in the terminal window.</p></details>
+</section>
