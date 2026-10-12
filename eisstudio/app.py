@@ -22,6 +22,7 @@ from eisstudio import io as eio
 from eisstudio import plotting as pl
 from eisstudio import validation as val
 from eisstudio import circuit_tree as ct
+from eisstudio.circuit_draw import circuit_figure
 from eisstudio.circuit_editor import circuit_editor
 
 SAMPLES = Path(__file__).parent / "sample_data"
@@ -71,6 +72,13 @@ def _cached_kk(freq, Zre, Zim):
     return val.lin_kk(freq, Zre + 1j * Zim)
 
 
+def dl(target, *args, **kwargs):
+    """download_button that does not rerun the app. A rerun would replace the files behind the
+    other download buttons, so a second quick click could hit a stale link."""
+    kwargs.setdefault("on_click", "ignore")
+    return target.download_button(*args, **kwargs)
+
+
 def show(fig, stretch=False):
     """On-screen preview at modest DPI (downloads use the export DPI)."""
     st.image(pl.to_bytes(fig, "png", 110), width="stretch" if stretch else "content")
@@ -96,13 +104,13 @@ def _download_row(label_prefix, fig_bytes_fn, csv_items, zip_name, zip_files, ke
     fmt = st.session_state.get("fig_fmt", "png")
     dpi = st.session_state.get("fig_dpi", 600)
     cols = st.columns(len(csv_items) + 2)
-    cols[0].download_button(f"⬇ {label_prefix} figure (.{fmt})", lambda: fig_bytes_fn(fmt, dpi),
+    dl(cols[0], f"⬇ {label_prefix} figure (.{fmt})", lambda: fig_bytes_fn(fmt, dpi),
                             file_name=f"{zip_name}_figure.{fmt}", mime=pl.MIME[fmt], key=f"{key}_fig",
                             width="stretch")
     for c, (lab, fname, data) in zip(cols[1:-1], csv_items):
-        c.download_button(f"⬇ {lab}", data, file_name=fname, mime="text/csv", key=f"{key}_{fname}",
+        dl(c, f"⬇ {lab}", data, file_name=fname, mime="text/csv", key=f"{key}_{fname}",
                           width="stretch")
-    cols[-1].download_button("⬇ Everything (.zip)", zip_files, file_name=f"{zip_name}.zip",
+    dl(cols[-1], "⬇ Everything (.zip)", zip_files, file_name=f"{zip_name}.zip",
                              mime="application/zip", key=f"{key}_zip", width="stretch", type="primary")
 
 
@@ -264,9 +272,9 @@ with tab_data:
         kk_df = pd.DataFrame({"freq_Hz": data.freq, "res_re_pct": kk["res_re_pct"], "res_im_pct": kk["res_im_pct"]})
         c1, c2 = st.columns(2)
         f_ = st.session_state.fig_fmt
-        c1.download_button(f"⬇ KK figure (.{f_})", _deferred(kfig, f_, st.session_state.fig_dpi),
+        dl(c1, f"⬇ KK figure (.{f_})", _deferred(kfig, f_, st.session_state.fig_dpi),
                            file_name=f"{data.name}_linKK.{f_}", mime=pl.MIME[f_])
-        c2.download_button("⬇ KK residuals (.csv)", ex.csv_bytes(kk_df), file_name=f"{data.name}_linKK.csv",
+        dl(c2, "⬇ KK residuals (.csv)", ex.csv_bytes(kk_df), file_name=f"{data.name}_linKK.csv",
                            mime="text/csv")
     except Exception as exc:  # noqa: BLE001
         st.warning(f"Lin-KK test failed: {exc}")
@@ -320,6 +328,18 @@ with tab_ecm:
     if ss.get("circuit_typed_error"):
         st.error(f"Circuit string not applied: {ss['circuit_typed_error']}")
     circuit = ss["circuit_text"]
+    if circuit:
+        try:
+            cfig = circuit_figure(circuit, width_in=min(width, 7.0), font_size=fs)
+            cols = st.columns([2.2, 1, 1, 1, 1])
+            cols[0].markdown("**Download the circuit diagram**", help="Drawn like the other figures (fonts, line "
+                             "weights, width from the sidebar). Vector formats keep the text editable.")
+            for col, fmt in zip(cols[1:], ("png", "pdf", "svg", "tiff")):
+                dl(col, fmt.upper(), _deferred(cfig, fmt, st.session_state.fig_dpi),
+                                    file_name=f"{data.name}_circuit.{fmt}",
+                                    mime=pl.MIME[fmt], key=f"circ_dl_{fmt}", width="stretch")
+        except Exception as exc:  # noqa: BLE001 - drawing must never block fitting
+            st.caption(f"Circuit diagram unavailable: {exc}")
     if not circuit:
         st.info("The circuit is empty. Choose a preset or drag an element onto the canvas.")
 
@@ -463,7 +483,7 @@ with tab_ecm:
                 with tab:
                     show(singles[k])
                     f_ = st.session_state.fig_fmt
-                    st.download_button(f"⬇ {k} (.{f_})", _deferred(singles[k], f_, st.session_state.fig_dpi),
+                    dl(st, f"⬇ {k} (.{f_})", _deferred(singles[k], f_, st.session_state.fig_dpi),
                                        file_name=f"{data.name}_ECM_{k}.{f_}", mime=pl.MIME[f_], key=f"ecm_dl_{k}")
 
             spec_csv = ex.csv_bytes(ex.ecm_spectrum_df(res))
@@ -476,6 +496,7 @@ with tab_ecm:
                                  f"{data.name}_ECM_parameters.csv": par_csv,
                                  f"{data.name}_ECM_settings.json": ex.settings_json("ECM", settings)},
                                 {f"{data.name}_ECM_composite": comp,
+                                 f"{data.name}_ECM_circuit": circuit_figure(res.circuit, min(width, 7.0), fs),
                                  **{f"{data.name}_ECM_{k}": fg for k, fg in singles.items()}}, dpi)
             st.markdown("**Downloads**")
             _download_row("Composite", lambda fm, d: pl.to_bytes(comp, fm, d),
@@ -583,7 +604,7 @@ with tab_drt:
             with tab:
                 show(singles[k])
                 f_ = st.session_state.fig_fmt
-                st.download_button(f"⬇ {k} (.{f_})", _deferred(singles[k], f_, st.session_state.fig_dpi),
+                dl(st, f"⬇ {k} (.{f_})", _deferred(singles[k], f_, st.session_state.fig_dpi),
                                    file_name=f"{data.name}_DRT_{k}.{f_}", mime=pl.MIME[f_], key=f"drt_dl_{k}")
 
         spec_csv = ex.csv_bytes(ex.drt_spectrum_df(dres))

@@ -136,6 +136,15 @@ def test_circuit_tree_roundtrip_and_parallel_branches():
     assert ct.to_string(t) == "R0-R1-R2"
 
 
+def test_circuit_figure_exports():
+    from eisstudio.circuit_draw import circuit_figure
+    for c in ["R0-p(R1,CPE1)-CPE2", "L0-R0-p(R1,CPE1)-p(R2-Wo1,CPE2)", "p(R1-p(R2,C2),CPE1,L1)-W1"]:
+        fig = circuit_figure(c, 3.5)
+        assert plotting.to_bytes(fig, "png", 150)[:4] == b"\x89PNG"
+        assert plotting.to_bytes(fig, "pdf", 150)[:4] == b"%PDF"
+        assert b"<svg" in plotting.to_bytes(fig, "svg", 150)[:400]
+
+
 def test_fit_time_budget():
     import time as _t
     d = _load("synthetic_2arc.csv")[0][0]
