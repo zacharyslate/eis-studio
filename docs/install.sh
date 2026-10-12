@@ -50,15 +50,49 @@ uv tool install --force --refresh-package eis-studio --python "$PYVER" \
 uv tool update-shell >/dev/null 2>&1 || true
 BIN="$(uv tool dir --bin)/eis-studio"
 
+ICON_PNG="$("$BIN" --icon-path png)"
+VERSION="$("$BIN" --version | awk '{print $NF}')"
+
 case "$(uname -s)" in
   Darwin)
-    SHORTCUT="$HOME/Desktop/EIS Studio.command"
-    printf '#!/bin/sh\nexec "%s"\n' "$BIN" > "$SHORTCUT"
-    chmod +x "$SHORTCUT"
+    # A real application bundle, so the icon shows in Finder, Launchpad, Spotlight and the Dock.
+    # It opens Terminal running eis-studio; closing that window quits the app (same as on Windows).
+    APPDIR="$HOME/Applications/EIS Studio.app"
+    rm -rf "$APPDIR"
+    mkdir -p "$APPDIR/Contents/MacOS" "$APPDIR/Contents/Resources"
+    cp "$("$BIN" --icon-path icns)" "$APPDIR/Contents/Resources/eis-studio.icns"
+    cat > "$APPDIR/Contents/MacOS/eis-studio-launcher" <<LAUNCH
+#!/bin/sh
+exec open -a Terminal "$BIN"
+LAUNCH
+    chmod +x "$APPDIR/Contents/MacOS/eis-studio-launcher"
+    cat > "$APPDIR/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>EIS Studio</string>
+  <key>CFBundleDisplayName</key><string>EIS Studio</string>
+  <key>CFBundleIdentifier</key><string>io.github.zacharyslate.eisstudio</string>
+  <key>CFBundleExecutable</key><string>eis-studio-launcher</string>
+  <key>CFBundleIconFile</key><string>eis-studio</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>LSMinimumSystemVersion</key><string>10.13</string>
+</dict>
+</plist>
+PLIST
+    touch "$APPDIR"   # makes Finder pick up the new icon
+    rm -f "$HOME/Desktop/EIS Studio.command"   # shortcut from earlier versions
+    ln -sfn "$APPDIR" "$HOME/Desktop/EIS Studio"
+    SHORTCUT="$APPDIR (also linked on your Desktop)"
     ;;
   Linux)
+    ICONDIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
     APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
-    mkdir -p "$APPS"
+    mkdir -p "$ICONDIR" "$APPS"
+    cp "$ICON_PNG" "$ICONDIR/eis-studio.png"
     SHORTCUT="$APPS/eis-studio.desktop"
     cat > "$SHORTCUT" <<DESKTOP
 [Desktop Entry]
@@ -66,6 +100,7 @@ Type=Application
 Name=EIS Studio
 Comment=Impedance analysis: equivalent circuits and DRT
 Exec="$BIN"
+Icon=$ICONDIR/eis-studio.png
 Terminal=true
 Categories=Science;Education;
 DESKTOP

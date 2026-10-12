@@ -1,0 +1,282 @@
+<!-- title: Impedance spectroscopy and ionic conductivity: EIS Studio -->
+<!-- description: How impedance spectroscopy works, how to read the spectrum of a solid electrolyte, and every calculation needed for ionic conductivity, uncertainty, effective capacitance and activation energy, with worked examples and calculators. -->
+<div class="page-head">
+  <h1>Impedance spectroscopy and ionic conductivity</h1>
+  <p>What an impedance spectrum is, how to read one from a solid electrolyte, and how to turn it into a conductivity you can defend. Each calculation has a worked example and a calculator that uses the same formulas as EIS Studio.</p>
+  <ul class="toc" aria-label="On this page">
+    <li><a href="#measure">The measurement</a></li>
+    <li><a href="#elements">Circuit elements</a></li>
+    <li><a href="#arc">The RC arc</a></li>
+    <li><a href="#cpe">Depressed arcs</a></li>
+    <li><a href="#pellet">Reading a pellet spectrum</a></li>
+    <li><a href="#conductivity">Conductivity</a></li>
+    <li><a href="#temperature">Activation energy</a></li>
+    <li><a href="#drt">The DRT</a></li>
+    <li><a href="#refs">References</a></li>
+  </ul>
+</div>
+
+<div class="theory">
+
+<section id="measure" aria-labelledby="measure-h">
+  <h2 id="measure-h">The measurement</h2>
+  <div class="prose">
+    <p>An impedance analyser applies a small sinusoidal voltage to the sample and records the current that flows. Comparing the two waves at one frequency gives two numbers: how large the current is, and how far it is shifted in time. Repeating this over many frequencies, typically from megahertz down to millihertz, gives the impedance spectrum.</p>
+  </div>
+  <div class="eq">\[ V(t) = V_0 \sin(\omega t), \qquad I(t) = I_0 \sin(\omega t + \varphi), \qquad \omega = 2\pi f \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_ac.html}}</div>
+    <figcaption><b>Excitation and response.</b> The current (orange) has a smaller amplitude than the voltage and peaks earlier by φ/ω. A capacitive sample makes the current lead the voltage.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>The impedance is the ratio of the two waves, written as a complex number so it carries both the amplitude ratio and the phase:</p>
+  </div>
+  <div class="eq">\[ Z(\omega) = \frac{\tilde{V}}{\tilde{I}} = \left|Z\right| e^{j\varphi_Z} = Z' + jZ'' \]</div>
+  <div class="eq">\[ \left|Z\right| = \frac{V_0}{I_0} = \sqrt{{Z'}^2 + {Z''}^2}, \qquad \varphi_Z = \arctan\frac{Z''}{Z'} = -\varphi \]</div>
+  <div class="prose">
+    <p>Z′ is the real (resistive) part and Z″ the imaginary (reactive) part. For a capacitive sample Z″ is negative, so plots show −Z″ to keep the arcs above the axis. Two plots are standard. The <strong>Nyquist plot</strong> shows −Z″ against Z′ (each point is one frequency, and both axes must have the same scale or arcs look distorted). The <strong>Bode plot</strong> shows |Z| and the phase against frequency.</p>
+    <p>Two conditions make the analysis valid. The response must be <strong>linear</strong>, so the amplitude is kept small (commonly a few to a few tens of millivolts), and the sample must be <strong>stable</strong> while the sweep runs. A Kramers–Kronig test, such as the Lin-KK check in EIS Studio, tests both after the fact.</p>
+  </div>
+</section>
+
+<section id="elements" aria-labelledby="elements-h">
+  <h2 id="elements-h">Circuit elements</h2>
+  <div class="prose">
+    <p>A spectrum is modelled with a few ideal elements whose impedances are known exactly. They combine like resistors in ordinary circuits, but with complex numbers.</p>
+  </div>
+  <table class="ref">
+    <thead><tr><th>Element</th><th>Impedance</th><th>In a Nyquist plot</th><th>What it usually represents</th></tr></thead>
+    <tbody>
+      <tr><td>Resistor R</td><td>\( Z = R \)</td><td>a point on the real axis</td><td>ion or electron transport, charge transfer</td></tr>
+      <tr><td>Capacitor C</td><td>\( Z = \dfrac{1}{j\omega C} \)</td><td>a vertical line</td><td>dielectric polarisation, double layers</td></tr>
+      <tr><td>Inductor L</td><td>\( Z = j\omega L \)</td><td>a line below the axis</td><td>cables and leads (an artefact)</td></tr>
+      <tr><td>Constant phase element (CPE)</td><td>\( Z = \dfrac{1}{Q\,(j\omega)^{\alpha}} \)</td><td>a straight line at angle α·90°</td><td>a non-ideal capacitor; α = 1 is a perfect capacitor</td></tr>
+    </tbody>
+  </table>
+  <div class="eq">\[ \text{in series: } Z = Z_1 + Z_2, \qquad \text{in parallel: } \frac{1}{Z} = \frac{1}{Z_1} + \frac{1}{Z_2} \]</div>
+</section>
+
+<section id="arc" aria-labelledby="arc-h">
+  <h2 id="arc-h">The RC arc</h2>
+  <div class="prose">
+    <p>A resistor in parallel with a capacitor is the basic unit of most spectra. Adding a series resistance R₀ (wires, contacts, or a process too fast to resolve) gives</p>
+  </div>
+  <div class="eq">\[ Z = R_0 + \frac{R_1}{1 + j\omega\tau}, \qquad \tau = R_1 C_1 \]</div>
+  <div class="eq">\[ Z' = R_0 + \frac{R_1}{1 + \omega^2\tau^2}, \qquad -Z'' = \frac{\omega\tau R_1}{1 + \omega^2\tau^2} \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_rc.html}}</div>
+    <figcaption><b>One RC element, R₀ = 20 Ω, R₁ = 200 Ω, C₁ = 1 nF.</b> The points trace a semicircle from R₀ (high frequency) to R₀ + R₁ (low frequency). Its diameter is R₁, and its top sits at ωτ = 1.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>The top of the arc is where the real and imaginary parts of the RC term are equal, which gives the characteristic frequency and the time constant:</p>
+  </div>
+  <div class="eq">\[ f_c = \frac{1}{2\pi R_1 C_1} = \frac{1}{2\pi\tau}, \qquad -{Z''}_{\max} = \frac{R_1}{2} \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_rcbode.html}}</div>
+    <figcaption><b>The same circuit as a Bode phase plot.</b> The phase peak is not at f<sub>c</sub>. The series resistance moves it up by a factor √(1 + R₁/R₀), here from 796 kHz to 2.6 MHz. Read time constants from the top of the Nyquist arc (or from the −Z″ peak), not from the phase peak.</figcaption>
+  </figure>
+  <div class="eq">\[ f_{\varphi,\max} = f_c\sqrt{1 + R_1/R_0} \]</div>
+</section>
+
+<section id="cpe" aria-labelledby="cpe-h">
+  <h2 id="cpe-h">Depressed arcs and the constant phase element</h2>
+  <div class="prose">
+    <p>Real arcs are usually flattened: their centre lies below the real axis. This comes from a spread of time constants (rough electrodes, grain-size distributions, inhomogeneous current), and it is modelled by replacing the capacitor with a CPE:</p>
+  </div>
+  <div class="eq">\[ Z_{R\parallel\mathrm{CPE}} = \frac{R}{1 + RQ\,(j\omega)^{\alpha}}, \qquad \omega_c = (RQ)^{-1/\alpha} \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_cpe.html}}</div>
+    <figcaption><b>R = 100 Ω in parallel with a CPE, same time constant, four values of α.</b> The intercepts stay at 0 and R; only the shape changes. As α falls toward 0.5 the element behaves less like a capacitor and more like a diffusion (Warburg-type) element.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>Q is not a capacitance: its unit is F s<sup>α−1</sup>, so it can't be compared with literature capacitances directly. Convert it to an effective capacitance first (Hsu &amp; Mansfeld, 2001):</p>
+  </div>
+  <div class="eq">\[ C_\mathrm{eff} = Q^{1/\alpha}\,R^{(1-\alpha)/\alpha} = \frac{\tau}{R}, \qquad \tau = (RQ)^{1/\alpha} \]</div>
+  <div class="worked">
+    <h4>Worked example</h4>
+    <p>A fit gives R = 200 Ω, Q = 1.00 × 10⁻⁷ F s<sup>α−1</sup> and α = 0.90.</p>
+    <div class="eq">\[ \tau = (200 \times 1.00\times10^{-7})^{1/0.9} = 6.01\times10^{-6}\ \mathrm{s} \]</div>
+    <div class="eq">\[ C_\mathrm{eff} = \frac{6.01\times10^{-6}}{200} = 3.01\times10^{-8}\ \mathrm{F}, \qquad f_c = \frac{1}{2\pi\tau} = 26.5\ \mathrm{kHz} \]</div>
+  </div>
+  <form class="calc" id="calc-cpe" aria-labelledby="calc-cpe-h" onsubmit="return false">
+    <h4 id="calc-cpe-h">Calculator: CPE to effective capacitance</h4>
+    <div class="fields">
+      <div><label for="cpe-r">R (Ω)</label><input id="cpe-r" type="number" step="any" min="0" value="200"></div>
+      <div><label for="cpe-q">Q (F s<sup>α−1</sup>)</label><input id="cpe-q" type="text" inputmode="decimal" value="1e-7"></div>
+      <div><label for="cpe-a">α</label><input id="cpe-a" type="number" step="0.01" min="0.01" max="1" value="0.9"></div>
+    </div>
+    <output for="cpe-r cpe-q cpe-a" aria-live="polite"></output>
+  </form>
+</section>
+
+<section id="pellet" aria-labelledby="pellet-h">
+  <h2 id="pellet-h">Reading the spectrum of a solid electrolyte pellet</h2>
+  <div class="prose">
+    <p>To measure ionic conductivity, the pellet sits between two <strong>ion-blocking electrodes</strong>: metals or carbon that conduct electrons but do not exchange ions with the electrolyte. Ions move freely through the pellet but pile up at the electrodes, which then behave like capacitors.</p>
+  </div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_geometry.html}}</div>
+    <figcaption><b>The measurement cell.</b> The two dimensions that enter the conductivity are the thickness L and the contact area A of the electrodes.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>A polycrystalline pellet then shows up to three features, from high to low frequency: transport through the grains (bulk), transport across grain boundaries, and the blocking electrodes. Each RC process can be identified by its capacitance, which reflects the thickness of the layer being charged.</p>
+  </div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_pellet.html}}</div>
+    <figcaption><b>Model spectrum of a pellet</b> (R<sub>b</sub> = 100 Ω, C<sub>b</sub> = 20 pF; R<sub>gb</sub> = 150 Ω, C<sub>gb</sub> = 1 nF; electrode CPE). The bulk arc peaks at 80 MHz, so most of it lies above the range of many impedance analysers (dashed).</figcaption>
+  </figure>
+  <table class="ref">
+    <caption class="small muted" style="text-align:left;caption-side:bottom;padding-top:.4rem">After Table 1 of Irvine, Sinclair &amp; West (1990), which assumes a cell constant L/A = 1 cm⁻¹. Multiply your fitted capacitance by your own L/A (in cm⁻¹) before comparing. These are orders of magnitude for assigning arcs, not exact limits.</caption>
+    <thead><tr><th>Capacitance (F)</th><th>Typical origin</th></tr></thead>
+    <tbody>
+      <tr><td>10⁻¹²</td><td>bulk</td></tr>
+      <tr><td>10⁻¹¹</td><td>minor second phase</td></tr>
+      <tr><td>10⁻¹¹ – 10⁻⁸</td><td>grain boundary</td></tr>
+      <tr><td>10⁻¹⁰ – 10⁻⁹</td><td>bulk ferroelectric</td></tr>
+      <tr><td>10⁻⁹ – 10⁻⁷</td><td>surface layer</td></tr>
+      <tr><td>10⁻⁷ – 10⁻⁵</td><td>sample–electrode interface</td></tr>
+      <tr><td>10⁻⁴</td><td>electrochemical reactions</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Why the bulk arc of a fast conductor is never seen</h3>
+  <div class="prose">
+    <p>The bulk resistance and the bulk capacitance both depend on the geometry, but their product does not. The geometry cancels, and the bulk arc's frequency depends only on the material:</p>
+  </div>
+  <div class="eq">\[ \tau_b = R_b C_b = \frac{L}{\sigma A}\cdot\frac{\varepsilon_0\varepsilon_r A}{L} = \frac{\varepsilon_0\varepsilon_r}{\sigma}, \qquad f_b = \frac{\sigma}{2\pi\varepsilon_0\varepsilon_r} \]</div>
+  <div class="prose">
+    <p>Here ε₀ = 8.854 × 10⁻¹² F m⁻¹ is the vacuum permittivity, ε<sub>r</sub> is the relative permittivity of the electrolyte, and σ is in S m⁻¹ (1 mS cm⁻¹ = 0.1 S m⁻¹).</p>
+  </div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_bulkfreq.html}}</div>
+    <figcaption><b>Where the bulk arc lies.</b> For σ = 1 mS cm⁻¹ and an illustrative ε<sub>r</sub> = 30, f<sub>b</sub> ≈ 60 MHz. Above about 10⁻⁴ S cm⁻¹ the bulk arc leaves the range of a 7 MHz analyser, and only the electrode spike and perhaps part of the grain-boundary arc remain.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>For such samples the bulk (or bulk + grain-boundary) resistance is the <strong>high-frequency intercept</strong> of the spectrum with the real axis: the point where the electrode spike starts. In a circuit fit it is the series resistance R₀. Fitting an extra RC element for an arc you didn't measure gives numbers the data do not determine; EIS Studio warns when that happens.</p>
+  </div>
+  <form class="calc" id="calc-bulk" aria-labelledby="calc-bulk-h" onsubmit="return false">
+    <h4 id="calc-bulk-h">Calculator: will I see the bulk arc?</h4>
+    <div class="fields">
+      <div><label for="bulk-s">Conductivity σ (S cm⁻¹)</label><input id="bulk-s" type="text" inputmode="decimal" value="1e-3"></div>
+      <div><label for="bulk-e">Relative permittivity ε<sub>r</sub></label><input id="bulk-e" type="number" step="any" min="1" value="30"></div>
+      <div><label for="bulk-f">Highest frequency of your analyser (MHz)</label><input id="bulk-f" type="number" step="any" min="0" value="7"></div>
+    </div>
+    <output for="bulk-s bulk-e bulk-f" aria-live="polite"></output>
+  </form>
+
+  <h3>Ionic or electronic?</h3>
+  <div class="prose">
+    <p>Ion-blocking electrodes still pass electrons. A purely ionic conductor therefore gives a spike that rises without limit at low frequency. If the sample also conducts electrons, the spike bends over into an arc that closes on the real axis at the electronic resistance. Quantify a small electronic contribution with a separate DC polarisation measurement (see Huggins, 2002).</p>
+  </div>
+</section>
+
+<section id="conductivity" aria-labelledby="cond-h">
+  <h2 id="cond-h">Calculating the ionic conductivity</h2>
+  <div class="prose">
+    <p>Resistance depends on the sample's shape; conductivity is the material property. For a pellet of thickness L with electrodes of area A:</p>
+  </div>
+  <div class="eq">\[ \sigma = \frac{L}{R\,A} = \frac{K}{R}, \qquad K = \frac{L}{A}, \qquad A = \frac{\pi d^2}{4} \]</div>
+  <div class="prose">
+    <p>With L in cm, A in cm² and R in Ω, σ comes out in S cm⁻¹. K is the cell constant. R is the ionic resistance you choose: the bulk alone for the grain conductivity, or bulk plus grain boundary for the total conductivity. Say which one you report. The area-specific resistance, used for electrolytes in a cell stack, is</p>
+  </div>
+  <div class="eq">\[ \mathrm{ASR} = R\,A \quad (\Omega\ \mathrm{cm}^2) \]</div>
+  <h3>Uncertainty</h3>
+  <div class="prose">
+    <p>Independent relative errors add in quadrature. For a disc, the area error is twice the diameter error:</p>
+  </div>
+  <div class="eq">\[ \left(\frac{\delta\sigma}{\sigma}\right)^2 = \left(\frac{\delta L}{L}\right)^2 + \left(\frac{\delta R}{R}\right)^2 + \left(\frac{\delta A}{A}\right)^2, \qquad \frac{\delta A}{A} = 2\,\frac{\delta d}{d} \]</div>
+  <div class="worked">
+    <h4>Worked example</h4>
+    <p>L = 1.00 ± 0.01 mm, d = 10.00 ± 0.05 mm, and the fitted ionic resistance is R = 50.0 ± 0.5 Ω.</p>
+    <div class="eq">\[ A = \frac{\pi\,(1.000\ \mathrm{cm})^2}{4} = 0.7854\ \mathrm{cm}^2, \qquad K = \frac{0.100\ \mathrm{cm}}{0.7854\ \mathrm{cm}^2} = 0.1273\ \mathrm{cm}^{-1} \]</div>
+    <div class="eq">\[ \sigma = \frac{0.1273\ \mathrm{cm}^{-1}}{50.0\ \Omega} = 2.546\times10^{-3}\ \mathrm{S\,cm^{-1}} \qquad = 2.55\ \mathrm{mS\,cm^{-1}} \]</div>
+    <div class="eq">\[ \frac{\delta\sigma}{\sigma} = \sqrt{(0.010)^2 + (0.010)^2 + (2\times0.005)^2} = 0.0173 \qquad \Rightarrow\; \sigma = 2.546 \pm 0.044\ \mathrm{mS\,cm^{-1}} \]</div>
+    <p>The area-specific resistance is 50.0 Ω × 0.7854 cm² = 39.3 Ω cm². Each of the three sources contributes equally here. A thickness gauge good to ±0.01 mm on a 1 mm pellet already limits you to 1 %, so a thinner pellet needs a better gauge.</p>
+  </div>
+  <form class="calc" id="calc-cond" aria-labelledby="calc-cond-h" onsubmit="return false">
+    <h4 id="calc-cond-h">Calculator: conductivity with uncertainty</h4>
+    <div class="fields">
+      <div><label for="c-l">Thickness L (mm)</label><input id="c-l" type="number" step="any" min="0" value="1.00"></div>
+      <div><label for="c-dl">± thickness (mm)</label><input id="c-dl" type="number" step="any" min="0" value="0.01"></div>
+      <div><label for="c-mode">Electrode size given as</label>
+        <select id="c-mode"><option value="d">diameter (mm)</option><option value="a">area (cm²)</option></select></div>
+      <div><label for="c-d" id="c-d-lab">Diameter d (mm)</label><input id="c-d" type="number" step="any" min="0" value="10.00"></div>
+      <div><label for="c-dd" id="c-dd-lab">± diameter (mm)</label><input id="c-dd" type="number" step="any" min="0" value="0.05"></div>
+      <div><label for="c-r">Resistance R (Ω)</label><input id="c-r" type="number" step="any" min="0" value="50.0"></div>
+      <div><label for="c-dr">± resistance (Ω)</label><input id="c-dr" type="number" step="any" min="0" value="0.5"></div>
+    </div>
+    <output for="c-l c-dl c-d c-dd c-r c-dr" aria-live="polite"></output>
+  </form>
+  <h3>Before you report it</h3>
+  <ul class="prose">
+    <li><strong>Density.</strong> Pores lower the measured value. Report the relative density of the pellet with the conductivity.</li>
+    <li><strong>Area.</strong> Use the electrode contact area. If the electrodes are smaller than the pellet, the pellet's own diameter overestimates A.</li>
+    <li><strong>Thickness.</strong> Measure it as it was during the measurement. Pellets pressed in the cell can be thinner under load than when released.</li>
+    <li><strong>Pressure and temperature.</strong> Soft electrolytes such as sulfides are often measured under stack pressure, which changes the result. Report pressure and temperature.</li>
+  </ul>
+</section>
+
+<section id="temperature" aria-labelledby="temp-h">
+  <h2 id="temp-h">Temperature dependence and activation energy</h2>
+  <div class="prose">
+    <p>Ion hopping is thermally activated, so conductivity rises steeply with temperature. Measuring σ at several temperatures and plotting ln(σT) against 1/T gives a straight line whose slope is the activation energy:</p>
+  </div>
+  <div class="eq">\[ \sigma T = A\,\exp\!\left(-\frac{E_a}{k_B T}\right) \quad\Rightarrow\quad \ln(\sigma T) = \ln A - \frac{E_a}{k_B}\cdot\frac{1}{T} \]</div>
+  <div class="eq">\[ E_a = -k_B\,\frac{d\ln(\sigma T)}{d(1/T)}, \qquad k_B = 8.617\times10^{-5}\ \mathrm{eV\,K^{-1}}, \qquad 1\ \mathrm{eV} = 96.49\ \mathrm{kJ\,mol^{-1}} \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_arrhenius.html}}</div>
+    <figcaption><b>Arrhenius plot</b> of six example points from 25 to 100 °C (the default data in the calculator below). The fitted line gives E<sub>a</sub> = 0.296 ± 0.001 eV. The top axis shows temperature in °C for orientation.</figcaption>
+  </figure>
+  <div class="prose">
+    <p>Many papers instead fit σ = σ₀ exp(−E<sub>a</sub>/k<sub>B</sub>T), without the factor T. Both forms are common and they give different numbers from the same data, so always state which one you used.</p>
+  </div>
+  <div class="worked">
+    <h4>Worked example: two temperatures</h4>
+    <p>σ = 2.5 mS cm⁻¹ at 25 °C (298.15 K) and 6.0 mS cm⁻¹ at 60 °C (333.15 K).</p>
+    <div class="eq">\[ E_a = k_B\,\frac{\ln\!\big(\sigma_2 T_2 / \sigma_1 T_1\big)}{1/T_1 - 1/T_2} = 8.617\times10^{-5}\times\frac{\ln(1998.9/745.4)}{3.524\times10^{-4}} = 0.241\ \mathrm{eV} \]</div>
+    <p>That is 23.3 kJ mol⁻¹. Without the factor T the same two points give 0.214 eV, a difference of about 0.03 eV from the choice of form alone. Two points also give no uncertainty; use at least four or five temperatures and the regression below.</p>
+  </div>
+  <form class="calc" id="calc-arr" aria-labelledby="calc-arr-h" onsubmit="return false">
+    <h4 id="calc-arr-h">Calculator: activation energy from your data</h4>
+    <div class="row2">
+      <div><label for="arr-data">One measurement per line: temperature (°C), conductivity (S cm⁻¹)</label>
+        <textarea id="arr-data" spellcheck="false">{{ARR_DATA}}</textarea></div>
+      <div><label for="arr-form">Fit</label>
+        <select id="arr-form"><option value="sT">ln(σT) vs 1/T  (σT = A e^(−Ea/kT))</option><option value="s">ln(σ) vs 1/T  (σ = σ₀ e^(−Ea/kT))</option></select>
+        <p class="small muted" style="margin-top:.8rem">Separators: comma, semicolon, tab or space. Decimal points, not commas. Values in mS cm⁻¹? Multiply by 0.001 first; E<sub>a</sub> doesn't depend on the unit, but the prefactor does.</p></div>
+    </div>
+    <output for="arr-data arr-form" aria-live="polite"></output>
+  </form>
+</section>
+
+<section id="drt" aria-labelledby="drt-h">
+  <h2 id="drt-h">The distribution of relaxation times</h2>
+  <div class="prose">
+    <p>An equivalent circuit has to be chosen before fitting. The distribution of relaxation times (DRT) avoids that choice: it describes the spectrum as a continuous sum of RC elements and solves for how much resistance sits at each time constant.</p>
+  </div>
+  <div class="eq">\[ Z(f) = R_\infty + j2\pi f L + \int_{-\infty}^{\infty} \frac{\gamma(\ln\tau)}{1 + j2\pi f\tau}\, d\ln\tau \]</div>
+  <figure class="fig">
+    <div class="plotbox">{{INCLUDE:_fig_drt.html}}</div>
+    <figcaption><b>DRT of the two-arc sample spectrum, computed by EIS Studio.</b> Each peak is one process. Its position gives the time constant, and its shaded area gives the resistance: 185 and 498 Ω here, against true values of 200 and 500 Ω. The missing resistance sits in two small side peaks, which are regularisation artefacts, not processes.</figcaption>
+  </figure>
+  <div class="eq">\[ R_k = \int_{\text{peak } k} \gamma(\ln\tau)\, d\ln\tau, \qquad f_k = \frac{1}{2\pi\tau_k} \]</div>
+  <div class="prose">
+    <p>Recovering γ from a noisy spectrum is ill-posed, so it is regularised. The result depends on the regularisation parameter λ, and it fails for a blocking-electrode spike, which has no finite DC resistance: crop the spike before computing a DRT. The equations and settings EIS Studio uses are on the <a href="methods.html">methods page</a>.</p>
+  </div>
+</section>
+
+<section id="refs" aria-labelledby="refs-h">
+  <h2 id="refs-h">References and further reading</h2>
+  <ul class="refs">
+    <li>A. Lasia, <em>Electrochemical Impedance Spectroscopy and its Applications</em>, Springer, New York (2014). <a href="https://doi.org/10.1007/978-1-4614-8933-7">doi:10.1007/978-1-4614-8933-7</a></li>
+    <li>M. E. Orazem, B. Tribollet, <em>Electrochemical Impedance Spectroscopy</em>, 2nd ed., Wiley / The Electrochemical Society (2017).</li>
+    <li>A. Ch. Lazanas, M. I. Prodromidis, Electrochemical Impedance Spectroscopy—A Tutorial, <em>ACS Meas. Sci. Au</em> <strong>3</strong> (2023) 162–193. Free to read. <a href="https://doi.org/10.1021/acsmeasuresciau.2c00070">doi:10.1021/acsmeasuresciau.2c00070</a></li>
+    <li>J. T. S. Irvine, D. C. Sinclair, A. R. West, Electroceramics: Characterization by Impedance Spectroscopy, <em>Adv. Mater.</em> <strong>2</strong> (1990) 132–138. <a href="https://doi.org/10.1002/adma.19900020304">doi:10.1002/adma.19900020304</a></li>
+    <li>C. H. Hsu, F. Mansfeld, Concerning the Conversion of the Constant Phase Element Parameter Y0 into a Capacitance, <em>Corrosion</em> <strong>57</strong> (2001) 747.</li>
+    <li>R. A. Huggins, Simple method to determine electronic and ionic components of the conductivity in mixed conductors: a review, <em>Ionics</em> <strong>8</strong> (2002) 300–313. <a href="https://doi.org/10.1007/BF02376083">doi:10.1007/BF02376083</a></li>
+    <li>Physical constants (ε₀, k<sub>B</sub>): CODATA 2018 recommended values, <a href="https://physics.nist.gov/cuu/Constants/">NIST</a>.</li>
+  </ul>
+</section>
+
+</div>
+<script src="theory.js" defer></script>

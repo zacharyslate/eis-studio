@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>EIS Studio</title>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="#15212B"/>
+  <g stroke="#243443" stroke-width="4">
+    <line x1="136" y1="56" x2="136" y2="456"/><line x1="256" y1="56" x2="256" y2="456"/><line x1="376" y1="56" x2="376" y2="456"/>
+    <line x1="56" y1="136" x2="456" y2="136"/><line x1="56" y1="256" x2="456" y2="256"/><line x1="56" y1="376" x2="456" y2="376"/>
+  </g>
+  <line x1="62" y1="330" x2="450" y2="330" stroke="#F3F6F5" stroke-width="24" stroke-linecap="round"/>
+  <path d="M86 330 A62 62 0 0 1 210 330 A108 108 0 0 1 426 330" fill="none" stroke="#F07A2A" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

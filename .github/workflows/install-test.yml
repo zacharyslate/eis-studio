@@ -33,6 +33,41 @@ jobs:
           EIS_STUDIO_SOURCE: ${{ github.workspace }}
         run: ./docs/install.ps1
 
+      - name: Check shortcut and icon (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          f="$HOME/.local/share/applications/eis-studio.desktop"
+          cat "$f"
+          icon=$(sed -n 's/^Icon=//p' "$f")
+          file "$icon" | grep -q "PNG image data, 256 x 256" && echo "icon ok: $icon"
+          desktop-file-validate "$f" 2>/dev/null || true
+
+      - name: Check app bundle and icon (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          app="$HOME/Applications/EIS Studio.app"
+          plutil -lint "$app/Contents/Info.plist"
+          test -x "$app/Contents/MacOS/eis-studio-launcher"
+          file "$app/Contents/Resources/eis-studio.icns" | grep -qi "icon" && echo "icns ok"
+          test -L "$HOME/Desktop/EIS Studio" && echo "desktop link ok"
+          cat "$app/Contents/MacOS/eis-studio-launcher"
+
+      - name: Check shortcuts and icon (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $shell = New-Object -ComObject WScript.Shell
+          foreach ($dir in @([Environment]::GetFolderPath("Desktop"), (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"))) {
+            $path = Join-Path $dir "EIS Studio.lnk"
+            if (-not (Test-Path $path)) { throw "missing shortcut $path" }
+            $lnk = $shell.CreateShortcut($path)
+            $icon = $lnk.IconLocation.Split(",")[0]
+            "$path -> target $($lnk.TargetPath), icon $($lnk.IconLocation)"
+            if (-not (Test-Path $icon)) { throw "icon file missing: $icon" }
+          }
+
       - name: Launch installed app and check it responds (macOS, Linux)
         if: runner.os != 'Windows'
         shell: bash

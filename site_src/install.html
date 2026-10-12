@@ -34,7 +34,7 @@
           <div class="cmd"><pre><code>curl -LsSf https://zacharyslate.github.io/eis-studio/install.sh | sh</code></pre></div>
           <p class="small muted">The first install takes a few minutes and needs about 1 GB of free disk space. It works on Apple silicon and Intel Macs, including older macOS versions: it picks library builds made for your system instead of compiling anything.</p></li>
         <li><h3>Start EIS Studio</h3>
-          <p>Double-click <strong>EIS Studio.command</strong> on your Desktop, or type <code>eis-studio</code> in a new Terminal window. The app opens in your web browser. Keep the Terminal window open while you work, and close it to quit.</p></li>
+          <p>Open <strong>EIS Studio</strong> from Launchpad, Spotlight, the Applications folder in your home folder, or the shortcut on your Desktop. A Terminal window opens, then the app appears in your web browser. Keep the Terminal window open while you work, and close it to quit. You can keep EIS Studio in the Dock like any other app.</p></li>
       </ol>
     </div>
 
@@ -59,7 +59,7 @@
     <p>Run the same install command again. It replaces the installed version with the current one.</p>
     <h3>Uninstall</h3>
     <div class="cmd"><pre><code>uv tool uninstall eis-studio</code></pre></div>
-    <p>Then delete the EIS Studio shortcut. The installer also put <a href="https://docs.astral.sh/uv/">uv</a>, the small tool that manages the installation, in your user folder. Remove it as described in <a href="https://docs.astral.sh/uv/getting-started/installation/#uninstallation">uv's uninstall instructions</a> if you don't use it for anything else.</p>
+    <p>Then delete the shortcuts: <strong>EIS Studio</strong> on the Desktop and in the Start Menu (Windows), <strong>EIS Studio.app</strong> in the Applications folder of your home folder and its Desktop link (macOS), or <code>~/.local/share/applications/eis-studio.desktop</code> (Linux). The installer also put <a href="https://docs.astral.sh/uv/">uv</a>, the small tool that manages the installation, in your user folder. Remove it as described in <a href="https://docs.astral.sh/uv/getting-started/installation/#uninstallation">uv's uninstall instructions</a> if you don't use it for anything else.</p>
     <h3>What the installer does</h3>
     <p>It installs uv if it is missing. uv then downloads Python 3.12 and EIS Studio's libraries into a separate folder in your user account and creates the <code>eis-studio</code> command and a shortcut. You can read the scripts before running them: <a href="install.ps1">install.ps1</a> for Windows and <a href="install.sh">install.sh</a> for macOS and Linux.</p>
   </div>

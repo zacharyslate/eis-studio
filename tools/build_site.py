@@ -9,12 +9,13 @@ import re
 from pathlib import Path
 
 import markdown
+from latex2mathml.converter import convert as tex2mml
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC, OUT = ROOT / "site_src", ROOT / "docs"
 VERSION = re.search(r'__version__ = "([^"]+)"', (ROOT / "eisstudio" / "__init__.py").read_text()).group(1)
 
-NAV = [("install.html", "Install"), ("tutorial.html", "Tutorial"), ("methods.html", "Methods"),
+NAV = [("install.html", "Install"), ("tutorial.html", "Tutorial"), ("theory.html", "Theory"), ("methods.html", "Methods"),
        ("https://github.com/zacharyslate/eis-studio", "GitHub")]
 MARK = ('<svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 20 A7 7 0 0 1 14 20 A10 10 0 0 1 32 20" '
         'fill="none" stroke="#D55E00" stroke-width="2.4" stroke-linecap="round"/>'
@@ -33,9 +34,10 @@ def layout(page, title, description, body):
 <meta property="og:title" content="{title}">
 <meta property="og:description" content="{description}">
 <meta property="og:image" content="https://zacharyslate.github.io/eis-studio/img/out-ecm.png">
-<link rel="icon" href="data:image/svg+xml,{MARK.replace('"', "'").replace('#', '%23').replace('aria-hidden=\'true\'', "xmlns='http://www.w3.org/2000/svg'")}">
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
 <link rel="preload" href="fonts/spectral-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="fonts/atkinson-hyperlegible-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/source-sans-3-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -62,12 +64,42 @@ def meta(text, key):
     return m.group(1) if m else ""
 
 
+def render_math(html):
+    """Convert \\[ ... \\] (display) and \\( ... \\) (inline) LaTeX to MathML at build time:
+    no JavaScript, no third-party requests, selectable and screen-reader friendly."""
+    def conv(tex, **kw):
+        try:
+            return tex2mml(tex, **kw)
+        except Exception as exc:
+            raise SystemExit(f"LaTeX error ({type(exc).__name__}) in: {tex}") from exc
+
+    def block(m):
+        # parts separated by \qquad become separate equations that wrap on narrow screens
+        parts = [p.strip().rstrip(",").strip() for p in re.split(r"\\qquad", m.group(1)) if p.strip()]
+        if len(parts) == 1:
+            return conv(parts[0], display="block")
+        return '<span class="eqrow">' + "".join(
+            f'<span class="eqpart">{conv(p, display="block")}</span>' for p in parts) + "</span>"
+
+    def inline(m):
+        return conv(m.group(1).strip())
+    html = re.sub(r"\\\[(.+?)\\\]", block, html, flags=re.S)
+    return re.sub(r"\\\((.+?)\\\)", inline, html, flags=re.S)
+
+
+def includes(text):
+    text = re.sub(r"\{\{INCLUDE:(_[\w.-]+)\}\}", lambda m: (SRC / m.group(1)).read_text(encoding="utf-8"), text)
+    arr = SRC / "_arr_data.txt"
+    return text.replace("{{ARR_DATA}}", arr.read_text(encoding="utf-8") if arr.exists() else "")
+
+
 def main():
     hero = (SRC / "_hero_svg.html").read_text(encoding="utf-8")
     for src in sorted(p for p in SRC.glob("*.html") if not p.name.startswith("_")):
         text = src.read_text(encoding="utf-8")
         body = re.sub(r"<!--\s*(title|description):.*?-->\n?", "", text)
         body = body.replace("{{HERO_SVG}}", hero).replace("{{VERSION}}", VERSION)
+        body = render_math(includes(body))
         (OUT / src.name).write_text(layout(src.name, meta(text, "title"), meta(text, "description"), body), encoding="utf-8")
         print("built", src.name)
     md = (ROOT / "eisstudio" / "METHODS.md").read_text(encoding="utf-8")

@@ -29,6 +29,8 @@ if ($LASTEXITCODE -ne 0) { throw "uv tool install failed (exit code $LASTEXITCOD
 uv tool update-shell | Out-Null
 
 $bin = Join-Path (uv tool dir --bin) "eis-studio.exe"
+$ico = (& $bin --icon-path ico | Out-String).Trim()
+if (-not (Test-Path $ico)) { throw "Icon not found at $ico" }
 $shell = New-Object -ComObject WScript.Shell
 $targets = @([Environment]::GetFolderPath("Desktop"),
              (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"))
@@ -38,6 +40,7 @@ foreach ($dir in $targets) {
     $lnk.TargetPath = $bin
     $lnk.WorkingDirectory = $env:USERPROFILE
     $lnk.Description = "EIS Studio: impedance analysis (ECM and DRT)"
+    $lnk.IconLocation = "$ico,0"
     $lnk.Save()
 }
 

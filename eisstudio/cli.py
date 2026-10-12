@@ -18,6 +18,8 @@ from pathlib import Path
 from . import __version__
 
 APP = Path(__file__).with_name("app.py")
+ASSETS = Path(__file__).with_name("assets")
+ICONS = {"png": "icon.png", "ico": "icon.ico", "icns": "icon.icns", "svg": "icon.svg"}
 
 
 def _free_port(start: int, host: str) -> int:
@@ -48,7 +50,13 @@ def main(argv=None):
     ap.add_argument("--network", action="store_true",
                     help="listen on all interfaces so others on your network can connect (off by default)")
     ap.add_argument("--version", action="version", version=f"EIS Studio {__version__}")
+    ap.add_argument("--icon-path", choices=sorted(ICONS), metavar="{png,ico,icns,svg}",
+                    help="print the path of the app icon in that format and exit (used by the installers)")
     args = ap.parse_args(argv)
+
+    if args.icon_path:
+        print(ASSETS / ICONS[args.icon_path])
+        return
 
     host = "0.0.0.0" if args.network else "127.0.0.1"
     port = _free_port(args.port, "127.0.0.1" if host == "127.0.0.1" else "")

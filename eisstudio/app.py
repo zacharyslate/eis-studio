@@ -24,7 +24,8 @@ from eisstudio import validation as val
 
 SAMPLES = Path(__file__).parent / "sample_data"
 
-st.set_page_config(page_title="EIS Studio · ECM & DRT", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="EIS Studio · ECM & DRT", page_icon=str(Path(__file__).parent / "assets" / "icon.png"),
+                   layout="wide")
 
 CIRCUIT_PRESETS = {
     "Custom": None,
