@@ -8,7 +8,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-SAMPLES = ROOT / "sample_data"
+SAMPLES = ROOT / "eisstudio" / "sample_data"
 
 from eisstudio import conductivity, drt, ecm, export, io, plotting, validation  # noqa: E402
 

@@ -9,7 +9,7 @@ blocking_pellet: R0=40 + p(R1=150,CPE Q=1e-9 a=0.85) + blocking CPE (Q=2e-6, a=0
 import numpy as np
 from pathlib import Path
 
-out = Path(__file__).resolve().parents[1] / "sample_data"
+out = Path(__file__).resolve().parents[1] / "eisstudio" / "sample_data"
 out.mkdir(exist_ok=True)
 rng = np.random.default_rng(1)
 
