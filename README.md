@@ -38,6 +38,7 @@ eis-studio                      # or: streamlit run app.py
 | `app.py` | entry point for hosted deployments (e.g. Streamlit Community Cloud) |
 | `docs/` | the website, served by GitHub Pages, including `install.sh` / `install.ps1` |
 | `site_src/`, `tools/` | website sources and build scripts: `python tools/make_hero.py && python tools/make_theory_figs.py && python tools/make_guide_figs.py && python tools/build_site.py` |
+| `tools/video/` | the explainer video on the theory page: cell models, animations, music and renderer. `python tools/video/render.py out.mp4` (about 8 min on 2 cores), then `python tools/video/transcript.py` for the chapters and transcript |
 | `tests/` | validation against synthetic spectra with known parameters, plus app end-to-end tests |
 | `.github/workflows/install-test.yml` | runs the installers from the repository on Windows, macOS and Linux, checks shortcuts and icons, launches the app and runs the tests on every push |
 | `.github/workflows/public-install.yml` | runs the exact one-line commands from the website against the live site on all three systems, after every site deployment and weekly |

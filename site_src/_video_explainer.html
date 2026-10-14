@@ -1,0 +1,57 @@
+<figure class="video-block explainer">
+  <video id="explainer" controls preload="none" poster="media/eis-explained-poster.jpg" playsinline>
+    <source src="media/eis-explained.mp4" type="video/mp4">
+    Your browser cannot play this video. <a href="media/eis-explained.mp4">Download it (MP4)</a>.
+  </video>
+  <figcaption>7:42 min, captions in the picture, quiet background music. Spectra are simulated from equivalent circuits with illustrative values; the DRTs were computed with EIS Studio.</figcaption>
+</figure>
+<ol class="chapters" aria-label="Chapters">
+  <li><button type="button" data-t="0.0"><span class="ts">0:00</span> How a spectrum is built</button></li>
+  <li><button type="button" data-t="90.2"><span class="ts">1:30</span> A solid electrolyte pellet</button></li>
+  <li><button type="button" data-t="169.7"><span class="ts">2:50</span> An all-solid-state battery</button></li>
+  <li><button type="button" data-t="255.6"><span class="ts">4:16</span> A PEM water electrolyzer</button></li>
+  <li><button type="button" data-t="342.2"><span class="ts">5:42</span> A lithium-ion battery</button></li>
+  <li><button type="button" data-t="430.5"><span class="ts">7:10</span> What to take away</button></li>
+</ol>
+<details class="transcript">
+  <summary>Transcript of the captions</summary>
+  <h3>How a spectrum is built</h3>
+  <p><button type="button" class="ts" data-t="5.0">0:05</button> Impedance spectroscopy applies a small sine-wave voltage V and measures the current I (top right). Z = V/I has a size |Z| and a phase: how far the current is shifted in time against the voltage.</p>
+  <p><button type="button" class="ts" data-t="19.5">0:20</button> The measurement is repeated from high to low frequency, one point per frequency. −Z″ against Z′ gives the Nyquist plot; the phase against frequency gives the Bode plot.</p>
+  <p><button type="button" class="ts" data-t="31.1">0:31</button> Each process has a time constant τ = RC and responds most at f = 1/(2πτ): its point tops the arc and the DRT peaks there, with area R. The phase peak sits nearby, shifted by the series resistance.</p>
+  <p><button type="button" class="ts" data-t="46.7">0:47</button> At high frequency the interface charges and discharges so fast that its capacitance passes the current: only the electrolyte resistance R₀ is felt. The point sits on the real axis.</p>
+  <p><button type="button" class="ts" data-t="59.1">0:59</button> Slower now: part of the current charges the double layer (C₁), part drives the reaction across the interface (R₁). The current leads the voltage and the point climbs the arc.</p>
+  <p><button type="button" class="ts" data-t="71.4">1:11</button> One process, one arc: R₀ is where the arc starts, R₁ is its width, and its top lies at f = 1/(2πR₁C₁) ≈ 160 Hz. Real cells have several processes in series, each with its own τ. Here are four.</p>
+  <h3>A solid electrolyte pellet</h3>
+  <p><button type="button" class="ts" data-t="93.4">1:33</button> A pellet pressed from a solid electrolyte powder sits between two metal electrodes that conduct electrons but block ions. We sweep from 10 MHz down to 20 Hz.</p>
+  <p><button type="button" class="ts" data-t="105.0">1:45</button> Here both arcs fit in the window: a slower conductor, or a cooled sample. For fast sulfides at room temperature they lie above 10 MHz; only the total resistance is seen as the intercept.</p>
+  <p><button type="button" class="ts" data-t="118.7">1:59</button> Highest frequencies: Li⁺ hop back and forth between sites inside the grains. The bulk resistance and the tiny geometric capacitance (pF) give the first, fastest arc.</p>
+  <p><button type="button" class="ts" data-t="129.6">2:10</button> Lower frequencies: the grain boundaries respond. They hinder the ions (R₂) but are very thin, so their capacitance is larger (nF) and their arc appears at lower frequency.</p>
+  <p><button type="button" class="ts" data-t="141.1">2:21</button> Lowest frequencies: the ions reach the electrodes but cannot cross them. They pile up in a double layer (µF), which behaves like a capacitor: a steep spike, no closing arc.</p>
+  <p><button type="button" class="ts" data-t="153.5">2:33</button> Arc widths give the bulk (R₁) and grain-boundary (R₂) resistances; σ = L/(R·A) with R₁ (bulk) or R₁ + R₂ (total). The spike shows the carriers are ions; the DRT leaves it out.</p>
+  <h3>An all-solid-state battery</h3>
+  <p><button type="button" class="ts" data-t="172.9">2:53</button> A full cell: lithium metal anode, a solid-electrolyte separator and a composite cathode of active particles mixed with solid electrolyte. We sweep from 1 MHz down to 5 mHz.</p>
+  <p><button type="button" class="ts" data-t="184.8">3:05</button> Each layer and interface responds at its own speed, so the spectrum separates them.</p>
+  <p><button type="button" class="ts" data-t="191.2">3:11</button> Highest frequencies: only ion transport through the solid-electrolyte separator responds. Its bulk and grain-boundary arcs lie above 1 MHz, so it appears as the intercept R₀.</p>
+  <p><button type="button" class="ts" data-t="202.0">3:22</button> Around 1 kHz: Li⁺ cross into the lithium metal. Voids and poor contact squeeze the current through small spots and enlarge this arc; stack pressure shrinks it. Reaction layers add to it.</p>
+  <p><button type="button" class="ts" data-t="215.1">3:35</button> A few Hz: charge transfer between the solid electrolyte and the cathode particles, in parallel with their double layer. In sulfide cells it is often the largest arc.</p>
+  <p><button type="button" class="ts" data-t="226.7">3:47</button> Below about 1 Hz: Li diffuses into and out of the cathode particles. The slower the signal, the deeper the concentration wave reaches: the 45° Warburg line, turning vertical once the whole particle follows the signal.</p>
+  <p><button type="button" class="ts" data-t="241.2">4:01</button> Read off: separator resistance R₀, interface resistances R₁ and R₂, and diffusion. The spectrum alone does not say which interface is which: symmetric cells, temperature and SOC do.</p>
+  <h3>A PEM water electrolyzer</h3>
+  <p><button type="button" class="ts" data-t="258.8">4:19</button> Water is split while a DC current flows; a small AC signal rides on top of it. The impedance belongs to that operating point and is given per cm² of cell.</p>
+  <p><button type="button" class="ts" data-t="271.4">4:31</button> Here a low current (about 0.1 A cm⁻²), where the reaction arcs are large. At 1–2 A cm⁻² they shrink and the membrane dominates.</p>
+  <p><button type="button" class="ts" data-t="281.5">4:42</button> Highest frequencies: protons move through the membrane (and electrons through contacts and plates). Purely resistive: the high-frequency intercept, the ohmic loss.</p>
+  <p><button type="button" class="ts" data-t="290.5">4:51</button> A few kHz: usually assigned to the cathode, where H₂ evolves on platinum. The reaction is fast, so the arc is small; part of it may come from the ionomer or contacts.</p>
+  <p><button type="button" class="ts" data-t="303.6">5:04</button> Tens of Hz: the oxygen evolution reaction on the iridium-oxide anode. It is much slower, and its arc dominates the kinetic losses.</p>
+  <p><button type="button" class="ts" data-t="312.9">5:13</button> Around 1 Hz: often assigned to mass transport, water in and gas out through the porous layers. Bubbles block part of the surface; this arc grows at high current.</p>
+  <p><button type="button" class="ts" data-t="324.9">5:25</button> Read off: the ohmic loss, the kinetic loss of each electrode and the mass-transport loss. Their sum equals the slope of the polarization curve at this current. Low-frequency assignments are debated; spectra at several currents help.</p>
+  <h3>A lithium-ion battery</h3>
+  <p><button type="button" class="ts" data-t="345.4">5:45</button> A commercial-style cell, measured at rest. The impedance is only tens of milliohms, so cables and wiring matter. We sweep from 10 kHz down to 5 mHz.</p>
+  <p><button type="button" class="ts" data-t="356.6">5:57</button> Graphite anode, porous separator soaked in liquid electrolyte, NMC cathode.</p>
+  <p><button type="button" class="ts" data-t="361.6">6:02</button> Highest frequencies: the cable and the cell&#x27;s wound electrodes act as an inductor. The points fall below the axis. This is the wiring, not chemistry.</p>
+  <p><button type="button" class="ts" data-t="372.0">6:12</button> Where the curve crosses the axis: the ohmic resistance of the liquid electrolyte in the separator and pores, plus current collectors and contacts.</p>
+  <p><button type="button" class="ts" data-t="381.8">6:22</button> Around 1 kHz: often assigned to Li⁺ crossing the SEI film on graphite, which grows with ageing. Contact resistance to the current collector gives an arc here too.</p>
+  <p><button type="button" class="ts" data-t="393.3">6:33</button> Tens of Hz: Li⁺ cross the particle surfaces of both electrodes (charge transfer) while the double layer charges. It depends strongly on temperature and state of charge.</p>
+  <p><button type="button" class="ts" data-t="404.5">6:45</button> Below about 1 Hz: Li diffuses inside the particles: the 45° line. Far below this sweep the particles would fill uniformly and the line would turn vertical, like a capacitor.</p>
+  <p><button type="button" class="ts" data-t="416.8">6:57</button> Read off: the ohmic resistance, the high-frequency and charge-transfer arcs, and diffusion. Tracking how they grow as a cell ages is the basis of impedance-based diagnostics.</p>
+</details>

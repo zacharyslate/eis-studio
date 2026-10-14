@@ -48,4 +48,16 @@
     });
     block.appendChild(btn);
   });
+  // chapter and transcript buttons jump the explainer video to their time
+  var video = document.getElementById("explainer");
+  if (video) {
+    document.querySelectorAll("[data-t]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var t = parseFloat(b.dataset.t);
+        function go() { video.currentTime = t; video.play(); }
+        if (video.readyState >= 1) go(); else { video.addEventListener("loadedmetadata", go, { once: true }); video.load(); }
+        video.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    });
+  }
 })();
