@@ -34,8 +34,8 @@ INTRO_CAPS = [
     "Z = V/I has a size |Z| and a phase: how far the current is shifted in time against the voltage.",
     "The measurement is repeated from high to low frequency, one point per frequency. −Z″ against Z′ gives the "
     "Nyquist plot; the phase against frequency gives the Bode plot.",
-    "Each process has a time constant τ = RC and responds most near f = 1/(2πτ). There its point reaches the "
-    "top of an arc, the phase peaks, and the DRT shows a peak whose area is R.",
+    "Each process has a time constant τ = RC and responds most at f = 1/(2πτ): its point tops the arc and the "
+    "DRT peaks there, with area R. The phase peak sits nearby, shifted by the series resistance.",
 ]
 INTRO_SUMMARY = ("One process, one arc: R₀ is where the arc starts, R₁ is its width, and its top lies at "
                  "f = 1/(2πR₁C₁) ≈ 160 Hz. Real cells have several processes in series, each with its own τ. "
@@ -232,6 +232,7 @@ def main():
     ap.add_argument("out")
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--only")
+    ap.add_argument("--no-music", action="store_true")
     ap.add_argument("--range", nargs=2, type=float, help="render only this time window (s)")
     a = ap.parse_args()
     segs = build_timeline(a.only)
@@ -258,6 +259,17 @@ def main():
     for p in parts:
         Path(p).unlink()
     lst.unlink()
+    if not a.no_music:
+        import music
+        wav = out.with_suffix(".music.wav")
+        music.write_wav(wav, music.compose((n_to - n_from) / FPS))
+        silent = out.with_suffix(".silent.mp4")
+        out.rename(silent)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(wav), "-map", "0:v",
+                        "-map", "1:a", "-c:v", "copy", "-af", "loudnorm=I=-20:TP=-2:LRA=7", "-ar", "48000",
+                        "-c:a", "aac", "-b:a", "160k", "-shortest", "-movflags", "+faststart", str(out)], check=True)
+        silent.unlink()
+        wav.unlink()
     print(f"done in {time.time() - t0:.0f}s -> {out}")
 
 

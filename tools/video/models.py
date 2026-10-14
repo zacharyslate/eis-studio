@@ -178,8 +178,8 @@ PELLET = System(
     fmax=1e7, fmin=20.0, unit="kΩ", scale=1e-3, drt_fmin=1.5e3,
     intro=[(5.0, "A pellet pressed from a solid electrolyte powder sits between two metal electrodes that "
                  "conduct electrons but block ions. We sweep from 10 MHz down to 20 Hz."),
-           (5.0, "Here the bulk arc is inside the window: a slower conductor, or a cooled sample. For fast "
-                 "sulfides at room temperature it lies above 10 MHz and only its intercept is seen.")],
+           (5.0, "Here both arcs fit in the window: a slower conductor, or a cooled sample. For fast sulfides at "
+                 "room temperature they lie above 10 MHz; only the total resistance is seen as the intercept.")],
     summary="Arc widths give the bulk (R₁) and grain-boundary (R₂) resistances; σ = L/(R·A) with R₁ (bulk) or "
             "R₁ + R₂ (total). The spike shows the carriers are ions; the DRT leaves it out.",
     nyq_view=(-0.3, 16.5, -0.6, None),
@@ -192,12 +192,12 @@ SSB = System(
               "Highest frequencies: only ion transport through the solid-electrolyte separator responds. Its "
               "bulk and grain-boundary arcs lie above 1 MHz, so it appears as the intercept R₀.",
               "separator", ["R0"]),
-        Block("an", "Li | SE interface", "p(R1,CPE1)", [15.0, _q(15.0, 2e4, 0.85), 0.85], BLUE, "charge_transfer",
-              "Tens of kHz: Li⁺ cross the interface between the lithium metal and the solid electrolyte. "
-              "Poor contact or a reaction layer makes this arc larger.",
+        Block("an", "Li | SE interface", "p(R1,CPE1)", [15.0, _q(15.0, 1e3, 0.85), 0.85], BLUE, "charge_transfer",
+              "Around 1 kHz: Li⁺ cross into the lithium metal. Voids and poor contact squeeze the current "
+              "through small spots and enlarge this arc; stack pressure shrinks it. Reaction layers add to it.",
               "anode_if", ["R1", "CPE1"]),
-        Block("ca", "cathode interface", "p(R2,CPE2)", [45.0, _q(45.0, 100.0, 0.8), 0.8], VERM, "charge_transfer",
-              "Around 100 Hz: charge transfer between the solid electrolyte and the cathode particles, in "
+        Block("ca", "cathode interface", "p(R2,CPE2)", [45.0, _q(45.0, 5.0, 0.8), 0.8], VERM, "charge_transfer",
+              "A few Hz: charge transfer between the solid electrolyte and the cathode particles, in "
               "parallel with their double layer. In sulfide cells it is often the largest arc.",
               "cathode_if", ["R2", "CPE2"]),
         Block("dif", "diffusion in particles", "Wo3", [40.0, 20.0], GREEN, "diffusion",
@@ -223,22 +223,23 @@ PEM = System(
               "plates). Purely resistive: the high-frequency intercept, the ohmic loss.",
               "membrane", ["R0"]),
         Block("her", "H₂ evolution", "p(R1,CPE1)", [0.02, _q(0.02, 5e3, 0.9), 0.9], BLUE, "charge_transfer",
-              "A few kHz: the hydrogen evolution reaction on the platinum cathode. It is fast, so its arc is small "
-              "and at high frequency.",
+              "A few kHz: usually assigned to the cathode, where H₂ evolves on platinum. The reaction is fast, so "
+              "the arc is small; part of it may come from the ionomer or contacts.",
               "cathode_cl", ["R1", "CPE1"]),
         Block("oer", "O₂ evolution", "p(R2,CPE2)", [0.25, _q(0.25, 50.0, 0.85), 0.85], VERM, "charge_transfer",
               "Tens of Hz: the oxygen evolution reaction on the iridium-oxide anode. It is much slower, and its "
               "arc dominates the kinetic losses.",
               "anode_cl", ["R2", "CPE2"]),
-        Block("mt", "mass transport", "p(R3,CPE3)", [0.06, _q(0.06, 1.0, 0.9), 0.9], PURPLE, "bubbles",
-              "Around 1 Hz: water supply and gas removal through the porous layers. Bubbles block part of the "
-              "surface; this arc grows at high current.",
+        Block("mt", "mass transport", "p(R3,CPE3)", [0.03, _q(0.03, 1.0, 0.9), 0.9], PURPLE, "bubbles",
+              "Around 1 Hz: often assigned to mass transport, water in and gas out through the porous layers. "
+              "Bubbles block part of the surface; this arc grows at high current.",
               "ptl", ["R3", "CPE3"]),
     ],
     fmax=1e5, fmin=0.1, unit="Ω cm²", scale=1.0, drt_fmin=0.1, ohmic_key="mem", drt_lam=1e-2,
-    intro=[(5.0, "Water is split while a DC current flows; a small AC signal rides on top of it. Impedance "
-                 "here is measured at the operating point, per square centimetre of cell."),
-           (4.0, "We sweep from 100 kHz down to 0.1 Hz.")],
+    intro=[(5.0, "Water is split while a DC current flows; a small AC signal rides on top of it. The impedance "
+                 "belongs to that operating point and is given per cm² of cell."),
+           (4.0, "Here a low current (about 0.1 A cm⁻²), where the reaction arcs are large. At 1–2 A cm⁻² they "
+                 "shrink and the membrane dominates.")],
     summary="Read off: the ohmic loss, the kinetic loss of each electrode and the mass-transport loss. Their "
             "sum equals the slope of the polarization curve at this current. Low-frequency assignments are "
             "debated; spectra at several currents help.",
@@ -256,13 +257,13 @@ LIB = System(
               "Where the curve crosses the axis: the ohmic resistance of the liquid electrolyte in the "
               "separator and pores, plus current collectors and contacts.",
               "separator", ["R0"]),
-        Block("sei", "SEI film", "p(R1,CPE1)", [0.008, _q(0.008, 1e3, 0.85), 0.85], BLUE, "film",
-              "Around 1 kHz: Li⁺ crossing the solid-electrolyte interphase, a thin film on the graphite. It "
-              "grows with ageing, so this arc is watched in battery diagnostics.",
+        Block("sei", "SEI / contacts", "p(R1,CPE1)", [0.008, _q(0.008, 1e3, 0.85), 0.85], BLUE, "film",
+              "Around 1 kHz: often assigned to Li⁺ crossing the SEI film on graphite, which grows with ageing. "
+              "Contact resistance to the current collector gives an arc here too.",
               "sei", ["R1", "CPE1"]),
         Block("ct", "charge transfer", "p(R2,CPE2)", [0.015, _q(0.015, 20.0, 0.85), 0.85], VERM, "charge_transfer",
-              "Tens of Hz: Li⁺ cross the particle surfaces (charge transfer) while the double layer charges. "
-              "It depends strongly on temperature and state of charge.",
+              "Tens of Hz: Li⁺ cross the particle surfaces of both electrodes (charge transfer) while the double "
+              "layer charges. It depends strongly on temperature and state of charge.",
               "particle_surf", ["R2", "CPE2"]),
         Block("dif", "solid diffusion", "Wo3", [0.020, 100.0], GREEN, "diffusion",
               "Below about 1 Hz: Li diffuses inside the particles: the 45° line. Far below this sweep the "
@@ -273,8 +274,8 @@ LIB = System(
     intro=[(5.0, "A commercial-style cell, measured at rest. The impedance is only tens of milliohms, so "
                  "cables and wiring matter. We sweep from 10 kHz down to 5 mHz."),
            (4.0, "Graphite anode, porous separator soaked in liquid electrolyte, NMC cathode.")],
-    summary="Read off: the ohmic resistance, the SEI and charge-transfer arcs (both grow as the cell ages), "
-            "and diffusion. Tracking these over a cell's life is the basis of impedance-based diagnostics.",
+    summary="Read off: the ohmic resistance, the high-frequency and charge-transfer arcs, and diffusion. "
+            "Tracking how they grow as a cell ages is the basis of impedance-based diagnostics.",
     nyq_view=(28, 62, -9.6, None),
 )
 
