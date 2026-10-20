@@ -72,6 +72,39 @@ def parse_circuit(circuit: str):
     return names, units
 
 
+def _arc_frequencies(freq, Z, n, lf_hi, lf_lo):
+    """Starting characteristic frequencies for n parallel R-C/CPE pairs, high to low.
+
+    Uses the apexes of -Z'' (local maxima, strongest first) inside [lf_lo, lf_hi]. An arc whose
+    apex lies above the window (-Z'' falling from the first point) is placed just above f_max.
+    Pairs not located this way are spread evenly over the remaining window, as before."""
+    if n == 0:
+        return []
+    lf = np.log10(freq)
+    inside = (lf <= lf_hi + 1e-9) & (lf >= lf_lo - 1e-9)
+    y = -Z.imag.copy()
+    y[~inside] = -np.inf
+    found = []
+    if y.size >= 5:
+        ys = np.convolve(np.where(np.isfinite(y), y, 0.0), np.ones(3) / 3, mode="same")
+        ys[~inside] = -np.inf
+        for i in range(1, y.size - 1):
+            if inside[i] and ys[i] > ys[i - 1] and ys[i] >= ys[i + 1] and ys[i] > 0:
+                found.append((ys[i], lf[i]))
+        first = int(np.argmax(inside))
+        if inside[first] and first + 2 < y.size and ys[first] > ys[first + 1] > ys[first + 2] and ys[first] > 0:
+            found.append((ys[first], lf_hi + 0.3))          # apex above the measured window
+    found = sorted(found, reverse=True)[:n]
+    fcs = sorted((x for _, x in found), reverse=True)
+    while len(fcs) < n:                                     # fill the largest gaps evenly
+        edges = [lf_hi + 0.3] + fcs + [lf_lo]
+        gaps = [(edges[i] - edges[i + 1], i) for i in range(len(edges) - 1)]
+        g, i = max(gaps)
+        fcs.insert(i, edges[i] - g / 2)
+        fcs = sorted(fcs, reverse=True)
+    return [10 ** x for x in fcs]
+
+
 def default_guess(names, freq, Z, circuit=None):
     """Data-informed starting values so first fits usually converge.
 
@@ -96,8 +129,8 @@ def default_guess(names, freq, Z, circuit=None):
     else:
         span = max(float(np.max(zr) - np.min(zr)), 1e-3)
     paired = {}
-    for k, (a, b) in enumerate(pairs):
-        fc = 10 ** (lf_hi - (k + 1) * (lf_hi - lf_lo) / (len(pairs) + 1))
+    for k, (a, b, fc) in enumerate(zip([p[0] for p in pairs], [p[1] for p in pairs],
+                                      _arc_frequencies(freq, Z, len(pairs), lf_hi, lf_lo))):
         paired[a] = paired[b] = (fc, len(pairs))
     n_r = sum(1 for n in names if element_type(n) == "R")
     first_r = next((x for x in names if element_type(x) == "R"), None)
@@ -279,7 +312,10 @@ class _Budget(Exception):
 
 def _timed_curve_fit(freq, Z, circuit, p0, fixed, lo, hi, weighting, deadline):
     """The non-global path of impedance.py's ``circuit_fit`` (same model, bounds, weighting,
-    maxfev=1e5 and ftol=1e-13), with a wall-clock deadline.
+    maxfev=1e5 and ftol=1e-13), with a wall-clock deadline and one change: ``x_scale="jac"``.
+    With the default unit scaling the trust-region solver takes steps of the same absolute size
+    for every parameter, so a CPE Q of 1e-10 (pF-nF pellet capacitances) next to an R of 1e3
+    barely moves from its starting value.
 
     Every evaluated parameter vector is scored; if the deadline passes, the best one seen is
     returned with ``converged=False`` instead of blocking the interface for minutes.
@@ -306,7 +342,8 @@ def _timed_curve_fit(freq, Z, circuit, p0, fixed, lo, hi, weighting, deadline):
         return out
 
     try:
-        popt, pcov = curve_fit(timed, f, y, p0=p0, bounds=(lo, hi), sigma=sig, maxfev=int(1e5), ftol=1e-13)
+        popt, pcov = curve_fit(timed, f, y, p0=p0, bounds=(lo, hi), sigma=sig, maxfev=int(1e5), ftol=1e-13,
+                               x_scale="jac")
         return popt, np.sqrt(np.diag(pcov)), True
     except _Budget:
         return best["p"], None, False

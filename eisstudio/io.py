@@ -84,8 +84,10 @@ class ParseReport:
 # Column recognition
 # --------------------------------------------------------------------------- #
 _FREQ = re.compile(r"(^|[^a-z])(freq|frequency|f)\b|^f\s*[/(\[]|hz", re.I)
-_RE = re.compile(r"re\s*\(\s*z\s*\)|z\s*'(?!')|z\s*′(?!′)|\bzreal\b|\bz_?re(al)?\b|\breal\b|z\s*re\b", re.I)
-_IM = re.compile(r"im\s*\(\s*z\s*\)|z\s*''|z\s*\"|z\s*″|\bzimag\b|\bz_?im(ag)?\b|\bimag(inary)?\b|z\s*im\b", re.I)
+_RE = re.compile(r"re\s*\(\s*z\s*\)|z\s*'(?!')|z\s*′(?!′)|\bzreal\b|\bz_?re(al)?\b|\breal\b|z\s*re\b|"
+                 r"^re\s*([(\[/]|$)", re.I)
+_IM = re.compile(r"im\s*\(\s*z\s*\)|z\s*''|z\s*\"|z\s*″|\bzimag\b|\bz_?im(ag)?\b|\bimag(inary)?\b|z\s*im\b|"
+                 r"^-?\s*im\s*([(\[/]|$)", re.I)
 _MOD = re.compile(r"\|\s*z\s*\||\bzmod\b|\bmod(ulus)?\b|\bmagnitude\b|abs\s*\(\s*z", re.I)
 _PHASE = re.compile(r"phase|\bzphz\b|\bphz\b|theta|\bangle\b", re.I)
 _ADMIT = re.compile(r"\(\s*y\s*\)|\by'|admit", re.I)
@@ -125,14 +127,19 @@ _NUM = re.compile(r"^[+-]?(\d+([.,]\d*)?|[.,]\d+)([eE][+-]?\d+)?$")
 
 
 def _decode(raw: bytes) -> str:
-    for enc in ("utf-8-sig", "utf-16", "latin-1"):
+    """UTF-8 first; UTF-16 only when the bytes look like UTF-16 (BOM or many NUL bytes), because
+    any even-length Latin-1 file "decodes" as UTF-16 into nonsense; otherwise Latin-1, which is
+    what EC-Lab and Gamry write (e.g. the ° and µ in their headers)."""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeError:
+        pass
+    head = raw[:4000]
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff") or (head and head.count(b"\x00") > 0.2 * len(head)):
         try:
-            txt = raw.decode(enc)
-            if enc == "utf-16" and "\x00" in txt:
-                continue
-            return txt
+            return raw.decode("utf-16")
         except UnicodeError:
-            continue
+            pass
     return raw.decode("latin-1", errors="replace")
 
 

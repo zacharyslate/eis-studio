@@ -21,6 +21,9 @@ Notes on pyDRTtools 0.2 (PyPI) that this wrapper works around:
     AttributeError; we pre-set that attribute so the run completes.
   * In 'Im Data' mode R_inf is not part of the regression; we estimate it afterwards
     as mean(Z' - Z'_DRT) and flag it as estimated.
+  * The basis functions are centred at tau = 1/f, while the kernel uses 2 pi f tau, so processes with a
+    characteristic frequency between f_max/2pi and f_max cannot be placed and pile up at the grid edge.
+    We centre them at tau = 1/(2 pi f), i.e. on the measured characteristic frequencies.
 """
 
 from __future__ import annotations
@@ -61,7 +64,6 @@ LAMBDA_METHODS = {
     "rGCV (robust GCV)": "rGCV",
     "L-curve": "LC",
     "Re-Im discrepancy": "re-im",
-    "k-fold cross-validation": "kf",
     "Manual (enter lambda)": "custom",
 }
 SHAPE_CONTROL = ["FWHM Coefficient", "Shape Factor"]
@@ -131,10 +133,19 @@ def run_drt(freq, Z, s: DRTSettings) -> DRTResult:
                     "quadrature (slower). Results are unaffected.")
 
     entry = runs.EIS_object(freq, Z.real.copy(), Z.imag.copy())
+    # pyDRTtools centres its basis functions at tau = 1/f, but its kernel is 1/(1 + j 2 pi f tau): the
+    # grid then only covers characteristic frequencies f_min/2pi ... f_max/2pi, and a process in the
+    # top ~0.8 decade of the window is pinned to the edge (R_inf absorbs the rest). Centre them at
+    # tau = 1/(2 pi f) instead (same spacing, so the shape factor and the Toeplitz assembly hold).
+    entry.tau = 1 / (2 * np.pi * freq)
+    entry.tau_fine = np.logspace(np.log10(entry.tau.min()) - 0.5, np.log10(entry.tau.max()) + 0.5, 10 * freq.size)
     entry.lambda_lambda = "n/a"  # works around the 'Re Data' typo in pyDRTtools 0.2
     kw = dict(rbf_type=s.rbf_type, data_used=s.data_used, induct_used=induct_used, der_used=s.der_used,
-              cv_type=s.cv_type, reg_param=float(s.reg_param), shape_control=s.shape_control,
+              cv_type="custom", reg_param=float(s.reg_param), shape_control=s.shape_control,
               coeff=float(s.coeff))
+    lam_edge = False
+    if s.cv_type != "custom":
+        kw["reg_param"], lam_edge = _select_lambda(runs, entry, kw, s.cv_type)
     with contextlib.redirect_stdout(io.StringIO()):
         if s.bayesian:
             runs.Bayesian_run(entry, NMC_sample=int(s.n_mc), **kw)
@@ -163,18 +174,50 @@ def run_drt(freq, Z, s: DRTSettings) -> DRTResult:
         res.gamma_hi = np.asarray(entry.upper_bound, float).ravel()
         res.gamma_mean = np.asarray(entry.mean, float).ravel()
 
-    bounds = (s.cv_type != "custom") and (abs(np.log10(lam) - (-7)) < 0.05 or abs(np.log10(lam)) < 0.05)
-    if bounds:
-        warn.append(f"lambda = {lam:.2e} is at the edge of pyDRTtools' search interval [1e-7, 1]; the selection "
-                    "criterion did not find an interior optimum. Inspect the DRT with a few manual lambda values.")
-    if s.cv_type != "custom" and abs(np.log(lam) - np.log(s.reg_param)) < 1e-6:
-        warn.append(f"The {s.cv_type} optimiser returned the initial guess λ = {lam:.2e} unchanged, i.e. it did not "
-                    "find a minimum (flat or ill-conditioned criterion). Try another λ-selection method or a "
-                    "different initial λ, and compare.")
+    if lam_edge:
+        warn.append(f"lambda = {lam:.2e} is at the edge of the search interval [1e-7, 1]: the {s.cv_type} criterion has "
+                    "no interior minimum for this spectrum. Inspect the DRT with a few manual lambda values.")
     res.peaks = find_drt_peaks(res, s.peak_prominence)
     res.metrics = _metrics(Z, Zfit)
     res.warnings = warn + _window_warnings(res)
     return res
+
+
+_CRITERIA = {"GCV": "compute_GCV", "mGCV": "compute_mGCV", "rGCV": "compute_rGCV", "LC": "compute_LC",
+             "re-im": "compute_re_im_cv", "kf": "compute_kf_cv"}
+
+
+def _select_lambda(runs, entry, kw, cv_type):
+    """Global choice of lambda for pyDRTtools' criteria.
+
+    pyDRTtools minimises the criterion with SLSQP from a single starting value, which can stop at
+    the starting value or in a local minimum. Here the criterion (pyDRTtools' own function, on the
+    exact matrices of the run) is evaluated on a grid over [1e-7, 1] and then refined around the
+    best grid point. Returns (lambda, at_edge)."""
+    from scipy.optimize import minimize_scalar
+    from pyDRTtools import parameter_selection as ps
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        runs.simple_run(entry, **kw)                       # builds A_re, A_im, M, b_re, b_im
+    crit = getattr(ps, _CRITERIA[cv_type])
+    args = (entry.A_re, entry.A_im, entry.b_re, entry.b_im, entry.M, kw["data_used"], kw["induct_used"])
+
+    def f(ll):
+        with contextlib.redirect_stdout(io.StringIO()):
+            v = float(np.ravel(crit(ll, *args))[0])
+        return v if np.isfinite(v) else np.inf
+
+    grid = np.linspace(np.log(1e-7), 0.0, 29)
+    try:
+        vals = np.array([f(ll) for ll in grid])
+    except Exception as exc:  # noqa: BLE001 - e.g. k-fold CV in pyDRTtools 0.2 (matrix size mismatch)
+        raise ValueError(f"The {cv_type} criterion failed inside pyDRTtools ({exc}). Choose another λ-selection "
+                         "method or enter λ manually.") from exc
+    i = int(np.argmin(vals))
+    lo, hi = grid[max(i - 1, 0)], grid[min(i + 1, grid.size - 1)]
+    r = minimize_scalar(f, bounds=(lo, hi), method="bounded", options={"xatol": 0.02})
+    ll = float(r.x) if r.success and r.fun <= vals[i] else float(grid[i])
+    return float(np.exp(ll)), bool(i in (0, grid.size - 1))
 
 
 def find_drt_peaks(res: DRTResult, prominence=0.02, minor_frac=0.03):

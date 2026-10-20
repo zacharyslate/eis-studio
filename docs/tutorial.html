@@ -62,13 +62,41 @@
       <h3>Compute the DRT</h3>
       <p class="prose">The <strong>DRT</strong> tab finds the processes in your spectrum without assuming a circuit; it's a good way to decide how many elements your circuit needs. The defaults (Gaussian basis, combined Re–Im data, λ by generalised cross-validation) suit most spectra. Tick <em>Bayesian credible band</em> to see how well each part of γ(τ) is determined.</p>
       <figure class="shot"><img src="img/08-drt-settings.png" alt="DRT settings: basis function, data used, inductance, regularisation, lambda selection" loading="lazy" width="1025" height="495"></figure>
-      <figure class="shot"><img src="img/09-drt-results.png" alt="DRT summary and peak table with time constants, frequencies and resistances" loading="lazy" width="1025" height="345"><figcaption>The two real processes come out at τ = 6 µs (183 Ω) and 24 ms (499 Ω). The two small peaks marked * are regularisation artefacts that appear beside depressed arcs.</figcaption></figure>
+      <figure class="shot"><img src="img/09-drt-results.png" alt="DRT summary and peak table with time constants, frequencies and resistances" loading="lazy" width="1025" height="347"><figcaption>The two real processes come out at τ = 6 µs (189 Ω) and 24 ms (497 Ω). The two small peaks marked * are regularisation artefacts that appear beside depressed arcs.</figcaption></figure>
       <div class="callout warn"><p><strong>Blocking electrodes.</strong> A capacitive tail has no finite DC resistance, which breaks the DRT model. Set <em>f min</em> above the start of the tail before computing the DRT; EIS Studio warns you if you forget.</p></div>
     </li>
     <li>
       <h3>Export figures and data</h3>
       <p class="prose">Set the figure width (single or double journal column), units, font size and format in <strong>Figures</strong> in the left panel. Each analysis then offers its composite figure, every single panel, CSV tables and a ZIP with everything in PNG, PDF and SVG plus a settings file.</p>
       <figure class="shot"><img src="img/07-ecm-figures.png" alt="Composite figure of the circuit fit and the row of download buttons" loading="lazy" width="1025" height="799"></figure>
+    </li>
+  </ol>
+</section>
+
+<section class="section" aria-labelledby="series-h">
+  <h2 id="series-h">Several measurements at once: activation energy and electronic conductivity</h2>
+  <p class="prose">Series mode analyses spectra at several temperatures (or of several pellets) and DC polarisation steps together. They can come from one export, such as an EC-Lab linked experiment, from several files, or both. The sample set used here is one pellet (1.00 mm × 10.0 mm) simulated at 25–85 °C with E<sub>a</sub> = 0.45 eV and σ(25 °C) = 2.0 × 10⁻⁵ S cm⁻¹, followed by five potential steps for an electronic conductivity of 2.0 × 10⁻⁹ S cm⁻¹.</p>
+  <ol class="steps">
+    <li>
+      <h3>Load the files and enter the temperatures</h3>
+      <p class="prose">In the left panel choose <strong>Series (several measurements)</strong>, then upload your files or choose the sample set “Temperature series + DC steps”. EIS Studio lists every spectrum and potentiostatic step it found. Type the temperatures in order into the quick-entry box and press <strong>Fill</strong>, or edit the table directly. For pellets of different size or density, give each its own thickness, diameter and mass in the table.</p>
+      <figure class="shot"><img src="img/10-series-table.png" alt="Table of the measurements found in one EC-Lab file: five impedance spectra with their temperatures and five DC steps at 0.1 to 0.5 V" loading="lazy" width="1044" height="557"></figure>
+    </li>
+    <li>
+      <h3>Analyse the spectra</h3>
+      <p class="prose">Choose how the ionic resistance is taken from each spectrum: an equivalent-circuit fit (the same circuit for all), Z′ at the minimum of −Z″ between the arc and the blocking spike, or the spike extrapolated to the real axis. Press <strong>Analyse spectra</strong>. You get R and σ for every spectrum, and from the Arrhenius fit the activation energy with its standard error and σ at 25 °C.</p>
+      <figure class="shot"><img src="img/11-series-results.png" alt="Analysis settings, the table of resistances and conductivities per temperature, and the activation energy of 0.450 eV" loading="lazy" width="1044" height="892"><figcaption>E<sub>a</sub> = 0.450 eV and σ(25 °C) = 2.00 × 10⁻⁵ S cm⁻¹, the values the sample was made with.</figcaption></figure>
+      <div class="callout warn"><p><strong>Check the assignment at every temperature.</strong> As a pellet warms, its bulk arc moves out of the window and the intercept starts to include the grain boundaries. An Arrhenius line that mixes “bulk” at low temperature with “total” at high temperature bends and gives a wrong E<sub>a</sub>.</p></div>
+    </li>
+    <li>
+      <h3>Compare the spectra</h3>
+      <p class="prose">Nyquist, Bode |Z|, −phase and DRT are overlaid, coloured from blue (coldest) to orange (hottest). Blocking spikes are hidden from the Nyquist plot so the arcs stay visible. <strong>Normalise impedance</strong> scales every spectrum by its own geometry (Ω cm), by geometry and relative density, or by its own resistance to compare shapes only.</p>
+      <figure class="shot"><img src="img/12-series-figure.png" alt="Four-panel figure: overlaid Nyquist plots with fits, Bode modulus, minus phase, and DRT curves for five temperatures" loading="lazy" width="1044" height="872"></figure>
+    </li>
+    <li>
+      <h3>Electronic conductivity from the DC steps</h3>
+      <p class="prose">The <strong>DC polarisation</strong> tab averages the current over the last part of each step, checks that it has stopped changing, and fits the steady-state currents against potential. With ion-blocking electrodes the slope gives R<sub>e</sub> and σ<sub>e</sub> = L/(R<sub>e</sub>·A). Choose a spectrum of the same pellet to get the electronic transference number.</p>
+      <figure class="shot"><img src="img/13-series-dc.png" alt="Steady-state currents of five potential steps, the current-time curves and the linear I-V fit giving an electronic conductivity of 2.0e-9 S/cm" loading="lazy" width="1044" height="950"></figure>
     </li>
   </ol>
 </section>
@@ -85,7 +113,7 @@
 
 </main>
 <footer class="site-footer"><div class="inner">
-  <span>EIS Studio 0.1.0. Free and open source under the MIT licence.</span>
+  <span>EIS Studio 0.2.0. Free and open source under the MIT licence.</span>
   <span><a href="https://github.com/zacharyslate/eis-studio">Source code</a> &nbsp; <a href="https://github.com/zacharyslate/eis-studio/issues">Report a problem</a></span>
 </div></footer>
 <script src="site.js" defer></script>

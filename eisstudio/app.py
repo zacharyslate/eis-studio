@@ -121,6 +121,16 @@ st.sidebar.title("EIS Studio")
 st.sidebar.caption(f"v{__version__} · ECM via impedance.py · DRT via pyDRTtools")
 
 with st.sidebar:
+    mode = st.radio("Analysis", ["Single spectrum", "Series (several measurements)"], key="mode",
+                    help="Series: several spectra (e.g. a temperature study, or pellets of different density) and DC "
+                         "polarisation steps, from one export or several files, analysed together.")
+
+if mode.startswith("Series"):
+    from eisstudio import series_page
+    series_page.render()
+    st.stop()
+
+with st.sidebar:
     st.header("1 · Data")
     up = st.file_uploader("Upload a spectrum",
                           type=["csv", "txt", "tsv", "dat", "mpt", "dta", "z", "xlsx", "xls", "par"],

@@ -7,6 +7,7 @@ A web app for analysing electrochemical impedance spectra:
 * **Equivalent-circuit fitting** (impedance.py): build the circuit visually (drag elements onto a canvas: beside = series, above/below = parallel; preset gallery; undo) or type it. Editable initial values, fixed parameters and bounds; modulus, proportional or unit weighting; multi-start fitting with an identifiability check and a time limit; effective capacitance and characteristic frequency for R–CPE pairs. The circuit diagram exports as PNG, PDF, SVG or TIFF.
 * **DRT** (pyDRTtools): all RBF types, Re/Im/combined data, inductance handling, 1st/2nd-order regularisation, six λ-selection criteria or manual λ, optional Bayesian (HMC) credible band, automatic peak detection and integration.
 * **Conductivity** σ = L/(R·A) from disc or slab geometry, with uncertainty propagation.
+* **Series mode:** several spectra and DC polarisation steps at once, from one export (e.g. an EC-Lab linked experiment) or several files. Ionic conductivity per spectrum (circuit fit, −Z″ minimum or spike intercept), activation energy from an Arrhenius fit, electronic conductivity from steady-state currents, and overlaid Nyquist, Bode and DRT plots, normalised by geometry and relative density if wanted.
 * **Outputs:** Nyquist (data + fit), Bode |Z| and phase (data + fit), residuals, and γ(ln τ) vs τ (or g(τ) = γ/τ) with a dual τ/f axis. Each comes as an individual figure and a lettered composite in PNG/TIFF (300–1200 dpi), PDF or SVG with editable text, plus CSV tables and a settings JSON (software versions included). A single ZIP holds everything.
 
 The sign convention is Z = Z′ + jZ″ with Z″ < 0 for capacitive behaviour; plots show −Z″.
@@ -55,7 +56,7 @@ The same repository also deploys to [Streamlit Community Cloud](https://share.st
 
 ```bash
 python tests/make_samples.py          # regenerates the synthetic files in eisstudio/sample_data/
-python -m pytest -q tests/            # 17 tests: parsers, ECM/DRT recovery of known parameters, app end-to-end
+python -m pytest -q tests/            # 26 tests: parsers, ECM/DRT recovery of known parameters, series analysis, app end-to-end
 ```
 
 Every synthetic file has known parameters, documented in `tests/make_samples.py`. The tests check that:
@@ -65,6 +66,7 @@ Every synthetic file has known parameters, documented in `tests/make_samples.py`
 * The DRT recovers R∞ (±3 Ω), the total polarisation resistance (±3 %), the individual arc resistances and the τ of the fast arc.
 * An arc above the measured window, and a blocking-electrode tail, are both flagged.
 * The conductivity arithmetic and error propagation are exact.
+* Series files are split correctly (EC-Lab linked experiment, separate files, Gamry chronoamperometry, two tables in one CSV); the ionic resistances, the activation energy (0.45 eV), σ(25 °C) and the electronic conductivity are recovered; the density normalisation collapses pellets of different density.
 * The app runs end-to-end without errors.
 
 ## Upstream issues worked around (see `METHODS.md`)
@@ -75,6 +77,9 @@ Every synthetic file has known parameters, documented in `tests/make_samples.py`
 | pyDRTtools 0.2 | `induct_used=2` behaves like 0 | inductive points (Z″ > 0) removed by the wrapper |
 | pyDRTtools 0.2 | "Re Data" branch raises AttributeError (`lambda_lambda` typo) | attribute pre-set |
 | pyDRTtools 0.2 | scikit-learn needed but undeclared | added to requirements |
+| pyDRTtools 0.2 | basis functions at τ = 1/f with a 2πfτ kernel: processes in the top ~0.8 decade of the window are pinned to the edge | basis centred at τ = 1/(2πf) |
+| pyDRTtools 0.2 | λ criteria minimised by SLSQP from one start (can stop at the start value); k-fold CV raises a matrix-size error | criterion scanned over λ = 1e-7…1 and refined; k-fold not offered |
+| impedance.py 1.7.1 | `curve_fit` with unit step scaling barely moves pF–nF CPE parameters | Jacobian step scaling (`x_scale="jac"`) |
 | impedance.py 1.7.1 | `linKK` fails with NumPy ≥ 2 (`np.float64(...)` repr inside `eval`) | patched `eval_linKK` |
 | matplotlib | not thread-safe; Streamlit renders sessions and downloads on separate threads | process-wide lock around all figure rendering |
 

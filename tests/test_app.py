@@ -65,3 +65,25 @@ if __name__ == "__main__":
               test_biologic_multisweep):
         t()
         print("PASS", t.__name__)
+
+
+def test_series_mode():
+    at = AppTest.from_file(APP, default_timeout=300)
+    at.run()
+    at.sidebar.radio(key="mode").set_value("Series (several measurements)").run()
+    at.sidebar.selectbox(key="s_sample").set_value("Temperature series + DC steps (one EC-Lab file)").run()
+    assert not at.exception, at.exception
+    [t for t in at.text_input if (t.key or "").startswith("s_tlist")][0].set_value("25, 40, 55, 70, 85").run()
+    [b for b in at.button if b.label == "Fill"][0].click().run()
+    form_method = [s for s in at.selectbox if s.label == "Ionic resistance from"][0]
+    form_method.set_value("Z′ at the minimum of −Z″ (arc/spike junction)")
+    [b for b in at.button if b.label == "Analyse spectra"][0].click().run()
+    assert not at.exception, at.exception
+    m = {x.label: x.value for x in at.metric}
+    assert m["Activation energy"].startswith("0.45"), m
+    assert "e-09" in m["σ_e"], m
+    # density set with the dense-equivalent normalisation renders
+    at.sidebar.selectbox(key="s_sample").set_value("Five pellets pressed to different densities").run()
+    at.selectbox(key="s_norm").set_value("Geometry and density: Z·(A/L)·ρ_rel^m (Ω cm, dense-equivalent)").run()
+    assert not at.exception, at.exception
+    assert any("Normalisation not possible" in w.value for w in at.warning)   # no masses entered yet

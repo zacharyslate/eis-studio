@@ -13,7 +13,7 @@
 
 ### ECM (impedance.py)
 
-Complex non-linear least squares via `impedance.models.circuits.fitting.circuit_fit` (SciPy `curve_fit`). Weighting options: modulus (σ = |Z|), proportional (σ = |Z′|, |Z″|), unit. Multi-start refits from log-perturbed initial values (×10^±1.5; CPE exponents in [0.5, 1]) and keeps the lowest objective. If several starts reach equally good minima with different parameter values, those parameters are reported as **not identifiable**.
+Complex non-linear least squares with impedance.py's circuit model and the same SciPy `curve_fit` call as its `circuit_fit`, with one change: the trust-region steps are scaled by the Jacobian (`x_scale="jac"`), so parameters of very different magnitude (a CPE Q of 10⁻¹⁰ next to an R of 10³) are all optimised; with the default unit scaling small parameters barely move from their starting values. Starting values put each R–C/CPE pair at an observed maximum of −Z″ (or just above the window when an arc is cut off at high frequency). Weighting options: modulus (σ = |Z|), proportional (σ = |Z′|, |Z″|), unit. Multi-start refits from log-perturbed initial values (×10^±1.5; CPE exponents in [0.5, 1]) and keeps the lowest objective. If several starts reach equally good minima with different parameter values, those parameters are reported as **not identifiable**.
 
 Pseudo-χ² = Σ[(Δ_re)² + (Δ_im)²], modulus-weighted, in the sense used by Boukamp (1995).
 
@@ -21,19 +21,31 @@ For parallel R–CPE pairs: C_eff = Q^(1/α) R^((1−α)/α), f_c = 1/[2π(RQ)^(
 
 ### DRT (pyDRTtools)
 
-Z(f) = R∞ + j2πfL + ∫ γ(ln τ)/(1 + j2πfτ) d ln τ. Solved by ridge (Tikhonov) regression with radial-basis-function discretisation and a non-negativity constraint (Wan et al. 2015; Saccoccio et al. 2014). λ is chosen by GCV, mGCV, rGCV, L-curve, Re–Im discrepancy or k-fold cross-validation, or entered manually (Maradesa et al. 2023). The optional credible band samples the truncated-Gaussian posterior by Hamiltonian Monte Carlo (pyDRTtools `Bayesian_run`; Ciucci & Chen 2015; Effat & Ciucci 2017).
+Z(f) = R∞ + j2πfL + ∫ γ(ln τ)/(1 + j2πfτ) d ln τ. Solved by ridge (Tikhonov) regression with radial-basis-function discretisation and a non-negativity constraint (Wan et al. 2015; Saccoccio et al. 2014). λ is chosen by GCV, mGCV, rGCV, L-curve or Re–Im discrepancy, or entered manually (Maradesa et al. 2023). The criterion (pyDRTtools' own function, on the run's matrices) is evaluated on a grid over λ = 10⁻⁷…1 and refined around the best point; pyDRTtools itself minimises it with SLSQP from one starting value, which can stop at that value or in a local minimum. k-fold cross-validation is not offered: it fails inside pyDRTtools 0.2 with a matrix-size error. The optional credible band samples the truncated-Gaussian posterior by Hamiltonian Monte Carlo (pyDRTtools `Bayesian_run`; Ciucci & Chen 2015; Effat & Ciucci 2017).
 
 * **Peak resistance** = area under the peak over ln τ, split at the minima of γ. **Peak frequency** f = 1/(2πτ).
 * **R_pol** = ∫γ d ln τ over the whole computed τ range (which extends half a decade beyond the data on each side; the shaded bands in the γ plot).
 * **What the DRT cannot do.** A capacitive tail from blocking electrodes has no finite DC resistance, so it violates the DRT model and produces a large artefact at long τ: crop it. Small satellite peaks next to a large peak are typical regularisation artefacts of depressed (CPE-like) arcs. Never interpret a peak from a single spectrum without checking how it responds to temperature, atmosphere or bias.
 
-**Wrapper fixes for pyDRTtools 0.2:** the package imports its Qt GUI on import (stubbed here); `induct_used = 2` ("discard inductive data") behaves like 0 (we remove Z″ > 0 points ourselves); the "Re Data" branch references a misspelled attribute (worked around); in "Im Data" mode R∞ is estimated after the fit.
+**Wrapper fixes for pyDRTtools 0.2:** its basis functions are centred at τ = 1/f while its kernel uses 2πfτ, so it can only place peaks at characteristic frequencies between f_min/2π and f_max/2π; a process in the top ~0.8 decade of the measured window is pinned to the edge and R∞ absorbs part of it. EIS Studio centres the basis functions at τ = 1/(2πf). The package imports its Qt GUI on import (stubbed here); `induct_used = 2` ("discard inductive data") behaves like 0 (we remove Z″ > 0 points ourselves); the "Re Data" branch references a misspelled attribute (worked around); in "Im Data" mode R∞ is estimated after the fit.
 
 **Fix for impedance.py 1.7.1:** `linKK` evaluates a string built from NumPy reprs, which fails under NumPy ≥ 2 (`np.float64(...)` is undefined in its eval namespace); a corrected `eval_linKK` is patched in.
 
 ### Conductivity
 
 σ = L/(R·A), with L the thickness and A the electrode area (π d²/4 for a disc). Relative uncertainties add in quadrature: (δσ/σ)² = (δL/L)² + (δR/R)² + (δA/A)², with δA/A = 2 δd/d. For a solid-electrolyte pellet at room temperature the bulk arc often lies above the highest measured frequency. Then "R0" (ECM) or R∞ (DRT) *is* the bulk (or bulk + grain-boundary) resistance, and the high-frequency intercept should be reported as such, not as a contact resistance.
+
+### Series analysis
+
+*Reading.* Every numeric table in a file is read with its own header. Rows with a frequency > 0 and an impedance are spectra; rows with time and current are time series (BioLogic writes f = 0 on rows of other techniques in linked experiments). Measurements are separated where a sequence or cycle index changes (`Ns`, `cycle number`), where the frequency jumps back up by more than a decade, where the time resets, or, without an index column, where the potential steps by more than max(2 mV, 20 × the median point-to-point change). Units of current (A, mA, µA, nA, pA), potential (V, mV) and time are taken from the headers. A time series whose potential varies (5–95 % spread above max(5 mV, 2 %)) is not treated as a potentiostatic step.
+
+*Ionic resistance per spectrum.* (i) Equivalent-circuit fit: the sum of the chosen resistances. (ii) Z′ at the minimum of −Z″ between the arcs and the blocking spike (parabolic refinement over three points). (iii) The blocking spike extrapolated to −Z″ = 0 by a straight-line fit to its low-frequency two thirds. Method (ii) slightly overestimates R when the arc and the spike overlap; method (iii) depends on the spike being straight, and a spike far from vertical (CPE exponent well below 1) carries a model error. σ = L/(R·A) uses each sample's own thickness and diameter when given in the table.
+
+*Activation energy.* Linear least squares of log₁₀(σT) (default) or log₁₀σ against 1000/T: Eₐ = −slope × 1000 k_B ln 10, k_B = 8.617333 × 10⁻⁵ eV K⁻¹; ±Eₐ is the standard error of the slope. σ at 25 °C is read from the fitted line and labelled extrapolated when 25 °C lies outside the measured temperatures. The σT form follows from the Nernst–Einstein relation; Eₐ from log σ is smaller by about k_BT.
+
+*Electronic conductivity (DC polarisation).* With ion-blocking electrodes the ionic current decays after each potential step and the steady-state current is electronic. I_ss is the mean current over the last part of each step (10 % by default); the drift over that window (from a straight-line fit) is reported, and above 5 % the step is flagged as not at steady state. A straight line I_ss = E/R_e + I₀ (optionally through the origin) gives R_e and σ_e = L/(R_e·A); the electronic transference number t_e = σ_e/(σ_e + σ_ion) uses a chosen spectrum of the same pellet. The I–V line is only linear while the electrolyte's chemical potential stays in its stability window; Hebb–Wagner analysis (σ_e as a function of potential) is outside the scope of this linear treatment.
+
+*Normalised plots.* Z·A/L (Ω cm) removes differences in thickness and area. For pellets of different relative density ρ_rel = m/(A·L)/ρ_theoretical, Z·(A/L)·ρ_rel^m gives a dense-equivalent resistivity under the assumption σ = σ_dense·ρ_rel^m (m = 1: linear in the solid fraction; m = 1.5: Bruggeman, spherical pores). Such corrections depend on pore shape and connectivity and are approximations; report the measured values with ρ_rel alongside. The same factor scales |Z| and γ of the DRT; the phase is unchanged.
 
 ### References
 
