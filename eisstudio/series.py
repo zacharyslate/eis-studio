@@ -526,21 +526,40 @@ class SpectrumResult:
     sigma: dict | None = None
     notes: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
+    kk: dict | None = None            # Lin-KK result on the analysed window
+    drt_f_cut: float | None = None    # lowest frequency given to the DRT (None = every point)
+    individual: bool = False          # fitted with its own settings rather than the series settings
+
+
+def _window(freq, Z, f_window):
+    if f_window:
+        keep = (freq >= f_window[0]) & (freq <= f_window[1])
+        return freq[keep], Z[keep]
+    return freq, Z
 
 
 def analyse_spectrum(m: Measurement, T_C, method, geom=None, circuit=None, r_names=None, n_starts=4,
-                     time_budget_s=20.0, f_window=None):
-    freq, Z = m.freq, m.Z
-    if f_window:
-        keep = (freq >= f_window[0]) & (freq <= f_window[1])
-        freq, Z = freq[keep], Z[keep]
+                     time_budget_s=20.0, f_window=None, initial=None, fixed=None, bounds=None,
+                     weighting="modulus", global_opt=False):
+    """Ionic resistance of one spectrum.
+
+    For the ECM method, every free parameter starts from the data-informed guess for *this*
+    spectrum unless ``initial`` gives a value for it; ``fixed`` parameters are held at their value
+    and ``bounds`` replace impedance.py's defaults (names not in the circuit are ignored, so one
+    settings dict can be applied to a whole series)."""
+    freq, Z = _window(m.freq, m.Z, f_window)
     res = SpectrumResult(m.name, T_C, method)
     try:
         if method == "ecm":
             names, _ = ecmm.parse_circuit(circuit)
-            g = ecmm.default_guess(names, freq, Z, circuit)
-            fit = ecmm.fit_ecm(freq, Z, circuit, dict(zip(names, g)), {}, ecmm.default_bounds(circuit),
-                               "modulus", False, n_starts, 0, time_budget_s)
+            fixed = {k: float(v) for k, v in (fixed or {}).items() if k in names}
+            start = dict(zip(names, ecmm.default_guess(names, freq, Z, circuit)))
+            start.update({k: float(v) for k, v in (initial or {}).items() if k in names})
+            free = {k: v for k, v in start.items() if k not in fixed}
+            bd = ecmm.default_bounds(circuit, fixed)
+            bd.update({k: (float(a), float(b)) for k, (a, b) in (bounds or {}).items() if k in bd})
+            fit = ecmm.fit_ecm(freq, Z, circuit, free, fixed, bd, weighting, global_opt, n_starts, 0,
+                               time_budget_s)
             res.fit = fit
             res.notes += fit.warnings
             all_r = [n for n, *_ in fit.all_params() if ecmm.element_type(n) == "R"]
@@ -548,7 +567,8 @@ def analyse_spectrum(m: Measurement, T_C, method, geom=None, circuit=None, r_nam
             if not use:
                 raise ValueError(f"None of the chosen resistances ({', '.join(r_names or [])}) is in {circuit}.")
             res.R = float(sum(fit.param(n)[0] for n in use))
-            res.dR = float(np.sqrt(sum(fit.param(n)[1] ** 2 for n in use)))
+            dR2 = [fit.param(n)[1] ** 2 for n in use if n not in fixed]
+            res.dR = float(np.sqrt(sum(v for v in dR2 if np.isfinite(v)))) if dR2 else 0.0
             res.extra = {"resistances": "+".join(use), "fit_max_res_pct": fit.metrics.get("max_abs_rel_res_pct")}
         elif method == "min":
             res.R, res.dR = r_minimum(freq, Z)
@@ -564,6 +584,123 @@ def analyse_spectrum(m: Measurement, T_C, method, geom=None, circuit=None, r_nam
     if res.R is not None and geom is not None:
         res.sigma = cond.conductivity(res.R, geom, res.dR)
     return res
+
+
+# --------------------------------------------------------------------------- #
+# DRT of a spectrum with a blocking-electrode tail
+# --------------------------------------------------------------------------- #
+DRT_CUTS = {
+    "Cut where −phase rises above θ after the arcs": "phase",
+    "Cut at the arc/spike junction (−Z″ minimum)": "junction",
+    "Keep every point": "none",
+}
+
+
+def drt_cut(freq, Z, mode="phase", theta_deg=15.0, f_min=None):
+    """Number of points (in high -> low frequency order) given to the DRT.
+
+    A blocking-electrode tail has no finite resistance: a ridge-regularised DRT puts a large peak
+    at the long-tau end of the data for it, whose size grows with every tail point included.
+    ``junction`` stops at the minimum of -Z'' (the most conservative choice, but it also drops any
+    small resistive process between the arcs and the steep tail); ``phase`` keeps the points
+    after the junction until -phase first exceeds ``theta_deg`` (the near-real-axis stretch where
+    such processes show up, although a depressed tail, CPE exponent well below 1, raises Z' there
+    by itself); ``none`` keeps everything. ``f_min`` (Hz), when given, overrides the
+    rule. Returns (n, f_cut) with f_cut = None when every point is kept."""
+    n_all = freq.size
+    if f_min:
+        below = np.where(freq < f_min)[0]
+        n = int(below[0]) if below.size else n_all
+    elif mode == "none":
+        n = n_all
+    else:
+        j = tail_start(freq, Z)
+        if j is None:
+            n = n_all
+        elif mode == "junction":
+            n = j + 1
+        else:
+            ph = -np.degrees(np.angle(Z[j + 1:]))
+            k = np.where(ph > theta_deg)[0]
+            n = j + 1 + int(k[0]) if k.size else n_all
+    n = max(min(n, n_all), 0)
+    return n, (float(freq[n - 1]) if 0 < n < n_all else None)
+
+
+def analyse_drt(m: Measurement, settings, f_window=None, cut="phase", theta_deg=15.0, f_min=None):
+    """DRT of one spectrum after the frequency window and the tail cut. Returns (DRTResult, f_cut)."""
+    from . import drt as drtm
+    freq, Z = _window(m.freq, m.Z, f_window)
+    n, f_cut = drt_cut(freq, Z, cut, theta_deg, f_min)
+    if n < 8:
+        raise ValueError(f"Only {n} points are left for the DRT after the low-frequency cut"
+                         + (f" at {f_cut:.3g} Hz" if f_cut else "") + "; keep more points.")
+    return drtm.run_drt(freq[:n], Z[:n], settings), f_cut
+
+
+def kk_check(m: Measurement, f_window=None):
+    from . import validation as val
+    freq, Z = _window(m.freq, m.Z, f_window)
+    return val.lin_kk(freq, Z)
+
+
+START_MODES = {
+    "Data-informed guesses for each spectrum": "data",
+    "The table's initial values for every spectrum": "table",
+    "The previous spectrum's result (coldest first)": "chain",
+}
+
+
+def analyse_series(items, method, circuit=None, r_names=None, n_starts=4, time_budget_s=20.0, f_window=None,
+                   start="data", initial=None, fixed=None, bounds=None, weighting="modulus", global_opt=False,
+                   drt_settings=None, drt_cut_mode="phase", drt_theta=15.0, kk=True, overrides=None,
+                   progress=None):
+    """Analyse spectra with one set of settings.
+
+    items: list of (key, Measurement, T_C) in the order to analyse (for ``start='chain'`` each fit
+    starts from the previous successful fit, so pass them in temperature order). overrides: {key: {"initial", "fixed", "bounds",
+    "drt_f_min"}} individual settings for some spectra; ECM entries are used only when
+    ``overrides[key]["circuit"]`` equals ``circuit``. progress(fraction, text) is called as it goes.
+    Returns {key: SpectrumResult}."""
+    overrides = overrides or {}
+    out, prev = {}, None
+    n = len(items)
+    for k, (key, m, T) in enumerate(items):
+        if progress:
+            progress(k / max(n, 1), f"{m.name}: resistance…")
+        ov = overrides.get(key) or {}
+        own = bool(ov.get("circuit") == circuit and method == "ecm" and "fixed" in ov)
+        if own:
+            ini, fx, bd = ov.get("initial"), ov.get("fixed"), ov.get("bounds")
+        else:
+            fx, bd = fixed, bounds
+            ini = initial if start == "table" else (prev if start == "chain" and prev else
+                                                     (initial if start == "chain" else None))
+        r = analyse_spectrum(m, T, method, None, circuit, r_names, n_starts, time_budget_s, f_window, ini, fx, bd,
+                             weighting, global_opt)
+        r.individual = own
+        if own:
+            r.notes.insert(0, "Fitted with its own settings.")
+        if method == "ecm" and r.fit is not None:
+            prev = {nm: v for nm, _, v, _, is_fixed in r.fit.all_params() if not is_fixed}
+        if kk:
+            try:
+                r.kk = kk_check(m, f_window)
+            except Exception as exc:  # noqa: BLE001
+                r.notes.append(f"Lin-KK failed: {exc}")
+        if drt_settings is not None:
+            if progress:
+                progress((k + 0.5) / max(n, 1), f"{m.name}: DRT…")
+            try:
+                r.drt, r.drt_f_cut = analyse_drt(m, drt_settings, f_window, drt_cut_mode, drt_theta,
+                                                 ov.get("drt_f_min"))
+                r.notes += [f"DRT: {w}" for w in r.drt.warnings]
+            except Exception as exc:  # noqa: BLE001
+                r.notes.append(f"DRT failed: {exc}")
+        out[key] = r
+    if progress:
+        progress(1.0, "Done")
+    return out
 
 
 # --------------------------------------------------------------------------- #

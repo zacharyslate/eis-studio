@@ -214,9 +214,10 @@ def ax_drt(ax, tau, gamma, lo=None, hi=None, mean=None, peaks=None, f_window=Non
     if peaks:
         for p in peaks:
             yp = p["gamma_max_ohm"] if gamma_mode == "gamma" else p["gamma_max_ohm"] / p["tau_s"]
-            ax.annotate(f"P{p['peak']}" + ("*" if p.get("minor") else ""), (p["tau_s"], yp), xytext=(0, 4),
-                        textcoords="offset points", ha="center", fontsize=matplotlib.rcParams["font.size"] - 1,
-                        color="#888888" if p.get("minor") else "#000000")
+            ax.annotate(f"P{p['peak']}" + ("*" if p.get("minor") else "") + ("†" if p.get("outside") else ""),
+                        (p["tau_s"], yp), xytext=(0, 4), textcoords="offset points", ha="center",
+                        fontsize=matplotlib.rcParams["font.size"] - 1,
+                        color="#888888" if p.get("minor") or p.get("outside") else "#000000")
     ax.set_xscale("log")
     ax.set_xlim(tau.min(), tau.max())
     if gamma_mode == "g":

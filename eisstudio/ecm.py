@@ -496,10 +496,14 @@ def derived_quantities(res: ECMResult):
             Q, _ = res.param(pair["CPE"] + "_0")
             al, _ = res.param(pair["CPE"] + "_1")
             if R > 0 and Q > 0 and al > 0:
-                ceff = Q ** (1 / al) * R ** ((1 - al) / al)
-                fc = 1 / (2 * np.pi * (R * Q) ** (1 / al))
+                # in log space: with a small exponent the powers overflow a float
+                ln_c = (np.log(Q) + (1 - al) * np.log(R)) / al
+                ln_tau = np.log(R * Q) / al
+                ceff = float(np.exp(ln_c)) if abs(ln_c) < 700 else float("nan")
+                tau = float(np.exp(ln_tau)) if abs(ln_tau) < 700 else float("nan")
+                fc = 1 / (2 * np.pi * tau) if np.isfinite(tau) and tau > 0 else float("nan")
                 out.append({"pair": f"p({a},{b})", "R_ohm": R, "C_eff_F": ceff, "alpha": al,
-                            "f_c_Hz": fc, "tau_s": 1 / (2 * np.pi * fc)})
+                            "f_c_Hz": fc, "tau_s": tau})
         elif "R" in pair and "C" in pair:
             R, _ = res.param(pair["R"])
             C, _ = res.param(pair["C"])

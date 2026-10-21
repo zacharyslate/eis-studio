@@ -87,3 +87,27 @@ def test_series_mode():
     at.selectbox(key="s_norm").set_value("Geometry and density: Z·(A/L)·ρ_rel^m (Ω cm, dense-equivalent)").run()
     assert not at.exception, at.exception
     assert any("Normalisation not possible" in w.value for w in at.warning)   # no masses entered yet
+
+
+def test_series_mode_circuit_fit_drt_and_individual_settings():
+    at = AppTest.from_file(APP, default_timeout=600)
+    at.run()
+    at.sidebar.radio(key="mode").set_value("Series (several measurements)").run()
+    at.sidebar.selectbox(key="s_sample").set_value("Temperature series as separate files + DC table").run()
+    assert at.session_state["s_circuit_text"] == "p(R1,CPE1)-CPE2"      # same editor as single mode
+    at.text_input(key="s_circuit_input").set_value("R0-p(R1,CPE1)-CPE2").run()
+    assert at.session_state["s_circuit_text"] == "R0-p(R1,CPE1)-CPE2"
+    # R0 + R1: at 85 °C the arc leaves the window and the R0/R1 split is not determined, so R1 alone
+    # would bend the Arrhenius line (the app warns about this)
+    at.multiselect(key="s_rsel_R0-p(R1,CPE1)-CPE2").set_value(["R0", "R1"]).run()
+    at.radio(key="s_start").set_value("The previous spectrum's result (coldest first)").run()
+    [b for b in at.button if b.label == "Analyse spectra"][0].click().run()
+    assert not at.exception, at.exception
+    m = {x.label: x.value for x in at.metric}
+    assert m["Activation energy"].startswith(("0.44", "0.45")), m
+    heads = [x.value for x in at.markdown if x.value.startswith("####")]
+    assert {"#### Fitted parameters", "#### DRT peaks", "#### Inspect one spectrum"} <= set(heads), heads
+    [b for b in at.button if b.label == "Refit this spectrum"][0].click().run()
+    assert not at.exception, at.exception
+    assert any(":" in k for k in at.session_state["s_overrides"])
+    assert not any("changed since the last analysis" in i.value for i in at.info)

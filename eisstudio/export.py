@@ -106,8 +106,9 @@ def drt_summary_df(res, cond=None):
         {"quantity": "R_pol (integral of gamma d ln tau)", "value": res.R_pol, "unit": "Ohm"},
     ]
     for p in res.peaks:
+        note = "outside the measured window (extrapolated)" if p.get("outside") else ""
         for k in ("tau_s", "f_Hz", "R_ohm", "C_eq_F", "gamma_max_ohm"):
-            rows.append({"quantity": f"P{p['peak']} {k}", "value": p[k]})
+            rows.append({"quantity": f"P{p['peak']} {k}", "value": p[k], "note": note})
     for k, v in res.metrics.items():
         rows.append({"quantity": f"fit: {k}", "value": v})
     if cond:

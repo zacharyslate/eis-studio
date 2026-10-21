@@ -32,8 +32,8 @@ def _component():
     return st.components.v2.component("eisstudio_circuit_editor", js=_JS, css=_CSS)
 
 
-def circuit_editor(circuit_text: str, key: str = "circuit_editor"):
-    """Render the editor for ``circuit_text``. Returns the edited tree when the user changed
+def circuit_editor(circuit_text: str, key: str = "circuit_editor", presets=None):
+    """Render the editor for ``circuit_text`` (``presets``: list of (label, circuit), default PRESETS). Returns the edited tree when the user changed
     something since the last call (as a dict with 'tree' and 'nonce'), else None."""
     try:
         tree = ct.parse(circuit_text)
@@ -43,7 +43,7 @@ def circuit_editor(circuit_text: str, key: str = "circuit_editor"):
         "tree": tree,
         "current": ct.to_string(tree) if tree else "",
         "kinds": ct.KINDS,
-        "presets": [{"label": label, "text": text, "tree": ct.parse(text)} for label, text in PRESETS],
+        "presets": [{"label": label, "text": text, "tree": ct.parse(text)} for label, text in (presets or PRESETS)],
     }
     result = _component()(key=key, data=data, on_tree_change=lambda: None, height="content")
     value = getattr(result, "tree", None)

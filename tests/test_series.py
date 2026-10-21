@@ -204,3 +204,67 @@ def test_dc_fit_reports_resolution_and_upper_bound():
     assert not any(s.resolved for s in st)
     fit = S.dc_fit([s.E for s in st], [s.I_ss for s in st], False, [s.dI for s in st])
     assert not fit["significant"] and fit["R_e_ohm"] is None and fit["G_upper_S"] > 2e-9
+
+
+def _blocking_with_small_process(n=70):
+    """Bulk arc (100 kOhm at ~100 kHz) + a small resistive process near the real axis (5 %, 100 Hz)
+    + a blocking CPE tail, sorted high -> low frequency."""
+    f = np.logspace(6, -1, n)
+    w = 2j * np.pi * f
+    bulk = 1 / (1 / 1e5 + 1e-11 * w ** 0.95)
+    small = 1 / (1 / 5e3 + (1 / (2 * np.pi * 100 * 5e3)) * w)
+    tail = 1 / (2e-6 * w ** 0.7)
+    return f, bulk + small + tail
+
+
+def test_drt_cut_rules_keep_the_small_process_with_the_phase_rule():
+    f, Z = _blocking_with_small_process()
+    n_j, fc_j = S.drt_cut(f, Z, "junction")
+    n_p, fc_p = S.drt_cut(f, Z, "phase", 15)
+    n_a, fc_a = S.drt_cut(f, Z, "none")
+    assert n_j < n_p < n_a == f.size and fc_a is None
+    assert fc_p < 100 < fc_j          # the 100 Hz process is kept by the phase rule only
+    ph = -np.degrees(np.angle(Z))
+    assert ph[n_p - 1] <= 15 < ph[n_p]
+    n_m, fc_m = S.drt_cut(f, Z, "phase", 15, f_min=10.0)
+    assert fc_m >= 10 and f[n_m] < 10
+    # no tail: everything kept whatever the rule
+    Zb = 1 / (1 / 1e5 + 1e-11 * (2j * np.pi * f) ** 0.95)
+    assert S.drt_cut(f, Zb, "junction") == (f.size, None)
+
+
+def test_series_driver_fixed_parameters_starts_and_individual_settings():
+    from eisstudio import drt as drtm
+    ms, _ = load(["LPSC_pellet_T-series_and_DC_linked.mpt"])
+    items = [(k, m, T) for k, (m, T) in enumerate(zip(ms[:5], TEMPS))]
+    circ = "p(R1,CPE1)-CPE2"
+    base = S.analyse_series(items, "ecm", circ, ["R1"], 2, 20, None, "data", kk=True,
+                            drt_settings=drtm.DRTSettings(cv_type="custom", reg_param=1e-3, inductance="discard"))
+    fixed = S.analyse_series(items, "ecm", circ, ["R1"], 2, 20, None, "chain", initial=None,
+                             fixed={"CPE2_1": 0.9}, bounds={"CPE1_1": (0.5, 1.0)}, kk=False,
+                             overrides={2: {"circuit": circ, "initial": {}, "fixed": {"CPE1_1": 0.95}, "bounds": {}},
+                                        3: {"circuit": "R0-CPE1", "initial": {}, "fixed": {}, "bounds": {}}})
+    for k, T in enumerate(TEMPS):
+        b, x = base[k], fixed[k]
+        assert abs(b.R / true_R(T) - 1) < 0.02, (T, b.R, b.notes)
+        assert abs(x.R / b.R - 1) < 0.05, (T, x.R, b.R, x.notes)
+        assert b.kk is not None and b.drt is not None and x.kk is None and x.drt is None
+        assert b.drt_f_cut is not None and b.drt.freq.min() >= b.drt_f_cut   # tail cut off the DRT
+        if k == 2:
+            assert x.individual and x.fit.param("CPE1_1")[0] == 0.95 and "CPE2_1" not in x.fit.fixed
+        else:
+            assert not x.individual and x.fit.param("CPE2_1")[0] == 0.9
+            assert 0.5 <= x.fit.param("CPE1_1")[0] <= 1.0
+
+
+def test_effective_capacitance_survives_a_vanishing_exponent():
+    from types import SimpleNamespace
+
+    from eisstudio import ecm as ecmm
+    vals = {"R1": 3e3, "CPE1_0": 1e-7, "CPE1_1": 0.004}
+    res = SimpleNamespace(circuit="p(R1,CPE1)-CPE2", param=lambda n: (vals[n], 0.0))
+    d = ecmm.derived_quantities(res)
+    assert len(d) == 1 and not np.isfinite(d[0]["C_eff_F"])
+    vals["CPE1_1"] = 0.9
+    d = ecmm.derived_quantities(res)
+    assert np.isclose(d[0]["C_eff_F"], 1e-7 ** (1 / 0.9) * 3e3 ** (0.1 / 0.9))

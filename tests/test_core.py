@@ -197,3 +197,18 @@ if __name__ == "__main__":
         if name.startswith("test_") and inspect.isfunction(fn):
             fn()
             print("PASS", name)
+
+
+def test_peak_outside_the_window_keeps_its_own_area():
+    """A peak beyond the lowest measured frequency must not add its area to the last in-window peak."""
+    from types import SimpleNamespace
+    f = np.logspace(5, 1, 50)                       # tau window 1.6e-6 .. 1.6e-2 s
+    tau = np.logspace(-7, -0.5, 400)
+    lnt = np.log(tau)
+
+    def bump(t0, R, s=0.35):                        # gaussian in ln tau with area R
+        return R / (s * np.sqrt(2 * np.pi)) * np.exp(-0.5 * ((lnt - np.log(t0)) / s) ** 2)
+    g = bump(1e-5, 1000) + bump(1e-3, 100) + bump(0.05, 2000)
+    pk = drt.find_drt_peaks(SimpleNamespace(tau=tau, gamma=g, freq=f), 0.02)
+    assert [p["outside"] for p in pk] == [False, False, True]
+    assert [round(p["R_ohm"] / R, 2) for p, R in zip(pk, (1000, 100, 2000))] == [1.0, 1.0, 1.0]

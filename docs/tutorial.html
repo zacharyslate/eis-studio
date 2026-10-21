@@ -83,15 +83,28 @@
       <figure class="shot"><img src="img/10-series-table.png" alt="Table of the measurements found in one EC-Lab file: five impedance spectra with their temperatures and five DC steps at 0.1 to 0.5 V" loading="lazy" width="1044" height="557"></figure>
     </li>
     <li>
-      <h3>Analyse the spectra</h3>
-      <p class="prose">Choose how the ionic resistance is taken from each spectrum: an equivalent-circuit fit (the same circuit for all), Z′ at the minimum of −Z″ between the arc and the blocking spike, or the spike extrapolated to the real axis. Press <strong>Analyse spectra</strong>. You get R and σ for every spectrum, and from the Arrhenius fit the activation energy with its standard error and σ at 25 °C.</p>
-      <figure class="shot"><img src="img/11-series-results.png" alt="Analysis settings, the table of resistances and conductivities per temperature, and the activation energy of 0.450 eV" loading="lazy" width="1044" height="892"><figcaption>E<sub>a</sub> = 0.450 eV and σ(25 °C) = 2.00 × 10⁻⁵ S cm⁻¹, the values the sample was made with.</figcaption></figure>
-      <div class="callout warn"><p><strong>Check the assignment at every temperature.</strong> As a pellet warms, its bulk arc moves out of the window and the intercept starts to include the grain boundaries. An Arrhenius line that mixes “bulk” at low temperature with “total” at high temperature bends and gives a wrong E<sub>a</sub>.</p></div>
+      <h3>Set up the analysis</h3>
+      <p class="prose">Choose how the ionic resistance is taken from each spectrum: an equivalent-circuit fit, Z′ at the minimum of −Z″ between the arc and the blocking spike, or the spike extrapolated to the real axis. For a fit, the circuit editor, presets, parameter table and fit options are the same as in single-spectrum mode, and they apply to every spectrum: <em>fixed</em> values and bounds hold for all of them, and the starting values are either guessed from each spectrum's own arcs (the default), taken from the table, or carried over from the previous, colder spectrum. Pick the resistances that make up the ionic resistance (e.g. bulk only, or bulk + grain boundary).</p>
+      <figure class="shot"><img src="img/11-series-settings.png" alt="Series settings: resistance method, frequency window, the circuit editor with presets, the resistances to sum, the starting-value options and the parameter table with fixed flags and bounds" loading="lazy" width="1060" height="1810"></figure>
+      <p class="prose">The DRT settings below it are those of single-spectrum mode as well. In series mode λ is manual by default, so every spectrum is regularised the same way and the DRTs can be compared. A blocking-electrode tail has no finite resistance, so the points given to the DRT stop at low frequency: where −phase first rises above θ after the arcs (default), at the −Z″ minimum (most conservative), or not at all. Press <strong>Analyse spectra</strong>.</p>
+    </li>
+    <li>
+      <h3>Read the results</h3>
+      <p class="prose">You get R and σ for every spectrum, the worst fit and Kramers–Kronig residuals, and from the Arrhenius fit the activation energy with its standard error and σ at 25 °C.</p>
+      <figure class="shot"><img src="img/11-series-results.png" alt="Table of resistances, conductivities, fit and KK residuals per temperature, and the activation energy of 0.450 eV" loading="lazy" width="1060" height="610"><figcaption>E<sub>a</sub> = 0.450 eV and σ(25 °C) = 2.00 × 10⁻⁵ S cm⁻¹, the values the sample was made with.</figcaption></figure>
+      <p class="prose">Below them, every fitted parameter and the DRT peaks of every spectrum are tabulated, and any parameter can be plotted against temperature.</p>
+      <figure class="shot"><img src="img/14-series-parameters.png" alt="Table of fitted circuit parameters for five temperatures, a plot of one parameter against temperature, and the table of DRT peaks with flags" loading="lazy" width="1060" height="1170"></figure>
+      <div class="callout warn"><p><strong>Check the assignment at every temperature.</strong> As a pellet warms, its bulk arc moves out of the window and the intercept starts to include the grain boundaries; a fit may then split the resistance differently between elements. An Arrhenius line that mixes “bulk” at low temperature with “total” at high temperature bends and gives a wrong E<sub>a</sub>. The effective capacitance of a bulk arc should change little with temperature: plot it.</p></div>
     </li>
     <li>
       <h3>Compare the spectra</h3>
-      <p class="prose">Nyquist, Bode |Z|, −phase and DRT are overlaid, coloured from blue (coldest) to orange (hottest). Blocking spikes are hidden from the Nyquist plot so the arcs stay visible. <strong>Normalise impedance</strong> scales every spectrum by its own geometry (Ω cm), by geometry and relative density, or by its own resistance to compare shapes only.</p>
-      <figure class="shot"><img src="img/12-series-figure.png" alt="Four-panel figure: overlaid Nyquist plots with fits, Bode modulus, minus phase, and DRT curves for five temperatures" loading="lazy" width="1044" height="872"></figure>
+      <p class="prose">Nyquist, Bode |Z|, −phase and DRT are overlaid, coloured from blue (coldest) to orange (hottest). Blocking spikes are hidden from the Nyquist plot so the arcs stay visible. Each DRT is drawn dotted beyond the lowest frequency it was given, and the DRT axis is scaled to the arcs, so peaks made by the onset of the tail run off the top. <strong>Normalise impedance</strong> scales every spectrum by its own geometry (Ω cm), by geometry and relative density, or by its own resistance to compare shapes only.</p>
+      <figure class="shot"><img src="img/12-series-figure.png" alt="Four-panel figure: overlaid Nyquist plots with fits, Bode modulus, minus phase, and DRT curves for five temperatures" loading="lazy" width="1060" height="886"></figure>
+    </li>
+    <li>
+      <h3>Inspect one spectrum</h3>
+      <p class="prose">Pick a spectrum to see its circuit fit, DRT and Kramers–Kronig check with the same figures and downloads as in single-spectrum mode. A spectrum the series settings don't suit can be refitted with its own parameter table, and its DRT can be given its own low-frequency limit. Moving that limit is also the test for a peak at the long-τ end: a real process stays where it is, a peak made by the tail follows the cut.</p>
+      <figure class="shot"><img src="img/15-series-inspector.png" alt="Inspector for the 25 °C spectrum: DRT summary, peak table and the composite DRT figure with Nyquist, gamma, Bode and residual panels" loading="lazy" width="1060" height="1397"></figure>
     </li>
     <li>
       <h3>Electronic conductivity from the DC steps</h3>
@@ -113,7 +126,7 @@
 
 </main>
 <footer class="site-footer"><div class="inner">
-  <span>EIS Studio 0.2.2. Free and open source under the MIT licence.</span>
+  <span>EIS Studio 0.3.0. Free and open source under the MIT licence.</span>
   <span><a href="https://github.com/zacharyslate/eis-studio">Source code</a> &nbsp; <a href="https://github.com/zacharyslate/eis-studio/issues">Report a problem</a></span>
 </div></footer>
 <script src="site.js" defer></script>

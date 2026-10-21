@@ -14,12 +14,14 @@ import pandas as pd
 import streamlit as st
 
 from eisstudio import conductivity as cond
-from eisstudio import drt as drtm
 from eisstudio import ecm as ecmm
 from eisstudio import export as ex
 from eisstudio import plotting as pl
 from eisstudio import series as S
 from eisstudio import series_plots as sp
+from eisstudio.circuit_editor import PRESETS as CIRCUIT_PRESETS
+from eisstudio.ui_shared import (GAMMA_MODES, circuit_block, drt_inputs, edit_param_table, fit_options,
+                                 param_table_df, read_param_table)
 
 SERIES_DIR = Path(__file__).parent / "sample_data" / "series"
 SAMPLE_SETS = {
@@ -35,13 +37,10 @@ SAMPLE_HINTS = {
     "Five pellets pressed to different densities": "All 10.0 mm diameter, 25 °C; thickness and mass are in the "
     "file names (theoretical density 1.86 g/cm³). Enter them per pellet in the table.",
 }
-PRESETS = {
-    "Arc + blocking spike: p(R1,CPE1)-CPE2": "p(R1,CPE1)-CPE2",
-    "Intercept + spike: R0-CPE1": "R0-CPE1",
-    "Intercept, arc + spike: R0-p(R1,CPE1)-CPE2": "R0-p(R1,CPE1)-CPE2",
-    "Two arcs + spike: p(R1,CPE1)-p(R2,CPE2)-CPE3": "p(R1,CPE1)-p(R2,CPE2)-CPE3",
-    "Custom": None,
-}
+EDITOR_PRESETS = [
+    ("Pellet, arc from the origin + blocking electrodes", "p(R1,CPE1)-CPE2"),
+    ("Pellet, two arcs from the origin + blocking electrodes", "p(R1,CPE1)-p(R2,CPE2)-CPE3"),
+] + [p for p in CIRCUIT_PRESETS if p[1] not in ("p(R1,CPE1)-CPE2", "p(R1,CPE1)-p(R2,CPE2)-CPE3")]
 
 
 def _h(*parts):
@@ -73,10 +72,221 @@ def _load(files):
     return S.load_series(list(files))
 
 
-def _fig_downloads(fig, stem, key):
+def _fig_downloads(fig, stem, key, target=st):
     fmt, dpi = st.session_state.s_fmt, st.session_state.s_dpi
-    _dl(st, f"⬇ {stem} (.{fmt})", lambda: pl.to_bytes(fig, fmt, dpi), file_name=f"{stem}.{fmt}", mime=pl.MIME[fmt],
+    _dl(target, f"⬇ {stem} (.{fmt})", lambda: pl.to_bytes(fig, fmt, dpi), file_name=f"{stem}.{fmt}", mime=pl.MIME[fmt],
         key=key)
+
+
+def _fmtv(v, digits=4):
+    if v is None or (isinstance(v, float) and not np.isfinite(v)):
+        return "–"
+    return f"{v:.{digits}g}"
+
+
+def _peak_flag(p, d, cut_applied=True):
+    """Short warning for a DRT peak: tail onset near/beyond the low-frequency end of the data, outside the window
+    at high frequency, or minor."""
+    tau_end = 1 / (2 * np.pi * float(d.freq.min()))
+    if cut_applied and p["tau_s"] > tau_end:
+        return "beyond the low-f cut: tail onset?"
+    if cut_applied and p["tau_s"] > tau_end / 3:
+        return "near the low-f cut: tail onset?"
+    if p.get("outside"):
+        return "outside the window"
+    return "minor" if p["minor"] else ""
+
+
+def _inspector(eis_rows, results, table, label_of, method, circuit, r_names, names, units, n_starts, time_budget,
+               f_window, wkey, global_opt, drt_s, cut, theta, gm, fkey, width, fs, zoom, akey_of, ecm_ok):
+    """One spectrum in detail: its fit, DRT and KK check, with individual settings if needed."""
+    ss = st.session_state
+    st.markdown("#### Inspect one spectrum")
+    k = st.selectbox("Spectrum", range(len(eis_rows)), key=f"s_pick_{fkey}",
+                     format_func=lambda j: f"{label_of(eis_rows[j][0])} · {eis_rows[j][1].name}")
+    i, m = eis_rows[k]
+    r = results[i]
+    T = _num(table.at[i, "T (°C)"])
+    okey = f"{fkey}:{i}"
+    ovs = ss.setdefault("s_overrides", {})
+    stem = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in m.name)
+
+    def _store(new_ov):
+        if new_ov:
+            ovs[okey] = new_ov
+        else:
+            ovs.pop(okey, None)
+        ov_now = {int(kk.split(":", 1)[1]): v for kk, v in ovs.items() if kk.split(":", 1)[0] == fkey}
+        ss["s_results_key"] = akey_of(ov_now)
+
+    for n in r.notes:
+        st.caption(f"ℹ {n}")
+    t_ecm, t_drt, t_kk = st.tabs(["Equivalent circuit", "DRT", "Kramers–Kronig"])
+    zoom_i = sp.auto_zoom([{"f": m.freq, "Z": m.Z}]) if zoom == "auto" else zoom
+
+    # ---------------- ECM
+    with t_ecm:
+        res = r.fit
+        if res is None:
+            st.info("No circuit fit for this spectrum." if method == "ecm" else
+                    "The resistance comes from the spectrum directly (no circuit fit). Choose *Equivalent-circuit "
+                    "fit* above to fit a circuit to every spectrum.")
+        else:
+            mt = res.metrics
+            st.markdown(
+                f"**Fit quality** · pseudo-χ² = {mt['pseudo_chi2']:.3e} · mean |Δ| Re/Im = "
+                f"{mt['mean_abs_rel_res_re_pct']:.2f} / {mt['mean_abs_rel_res_im_pct']:.2f} % · max |Δ| = "
+                f"{mt['max_abs_rel_res_pct']:.2f} % · best minimum reached by "
+                f"{mt.get('n_starts_at_best_minimum', 1)}/{mt.get('n_starts_converged', 1)} starts"
+                + (" · **fitted with its own settings**" if r.individual else ""))
+            c1, c2 = st.columns([3, 2])
+            prow = [{"parameter": n, "value": _fmtv(v), "± std. error": ("fixed" if fx else _fmtv(e, 2)),
+                     "rel. error": ("–" if fx or v == 0 or not np.isfinite(e) else f"{abs(e / v) * 100:.1f} %"),
+                     "unit": u} for n, u, v, e, fx in res.all_params()]
+            c1.dataframe(pd.DataFrame(prow), hide_index=True, width="stretch")
+            if res.derived:
+                c2.dataframe(pd.DataFrame([{
+                    "element": d["pair"], "C_eff / F": _fmtv(d["C_eff_F"], 3), "α": f"{d['alpha']:.3f}",
+                    "f_c / Hz": _fmtv(d["f_c_Hz"], 3)} for d in res.derived]), hide_index=True, width="stretch")
+                c2.caption("Typical C_eff (Irvine, Sinclair & West 1990): bulk ~10⁻¹² F, grain boundary "
+                           "10⁻¹¹–10⁻⁸ F, electrode/interface 10⁻⁷–10⁻⁵ F (per cm geometry: scale by L/A).")
+            rr, ri = ecmm.relative_residuals(res.Z, res.Z_fit)
+            comp = pl.fig_ecm_composite(width, res.freq, res.Z, res.f_smooth, res.Z_smooth, res.Z_fit, rr, ri, 1.0,
+                                        "Ω", True, fs, zoom_i)
+            _show(comp)
+            c1, c2, c3 = st.columns(3)
+            _fig_downloads(comp, f"{stem}_ECM", "s_i_dl_ecm", c1)
+            _dl(c2, "⬇ Parameters (.csv)", ex.csv_bytes(ex.ecm_params_df(res, None)),
+                file_name=f"{stem}_ECM_parameters.csv", mime="text/csv", key="s_i_dl_par")
+            _dl(c3, "⬇ Spectrum + fit (.csv)", ex.csv_bytes(ex.ecm_spectrum_df(res)),
+                file_name=f"{stem}_ECM_spectrum.csv", mime="text/csv", key="s_i_dl_spec")
+
+        if method == "ecm" and ecm_ok and circuit:
+            with st.expander("Refit this spectrum with its own settings", expanded=r.individual):
+                st.caption("For a spectrum the series settings don't suit (an arc leaving the window, a wrong "
+                           "minimum). Its starting values are this spectrum's current result; edit them, fix or "
+                           "bound parameters, and refit. The spectrum keeps these settings when the series is "
+                           "analysed again with the same circuit. Mind that the ionic resistance must still mean "
+                           "the same thing as for the other spectra, or Eₐ is not meaningful.")
+                if res is not None:
+                    vals = {n: v for n, _, v, _, _ in res.all_params()}
+                    g0 = [vals.get(n, np.nan) for n in names]
+                else:
+                    g0 = ecmm.default_guess(names, m.freq, m.Z, circuit)
+                itkey = f"s_itab_{okey}_{circuit}"
+                if itkey not in ss or ss.get("reset_" + itkey):
+                    df0 = param_table_df(names, units, g0, circuit)
+                    if res is not None:
+                        df0["fixed"] = [bool(fx) for *_, fx in res.all_params()]
+                    ss[itkey] = df0
+                    ss["reset_" + itkey] = False
+                itab = edit_param_table(ss[itkey], f"s_ied_{itkey}")
+                c1, c2, c3 = st.columns(3)
+                if c1.button("Refit this spectrum", type="primary", key="s_i_refit"):
+                    try:
+                        ini, fx, bd = read_param_table(itab)
+                        with st.spinner("Fitting…"):
+                            new = S.analyse_spectrum(m, T, method, None, circuit, r_names, n_starts, time_budget,
+                                                     f_window, ini, fx, bd, wkey, global_opt)
+                        new.individual = True
+                        new.notes.insert(0, "Fitted with its own settings.")
+                        new.kk, new.drt, new.drt_f_cut = r.kk, r.drt, r.drt_f_cut
+                        new.notes += [n for n in r.notes if n.startswith(("DRT", "Lin-KK"))]
+                        results[i] = new
+                        ov = dict(ovs.get(okey, {}))
+                        ov.update({"circuit": circuit, "initial": ini, "fixed": fx,
+                                   "bounds": {kk: (float(a), float(b)) for kk, (a, b) in bd.items()}})
+                        _store(ov)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+                if c2.button("Use the series settings again", disabled="fixed" not in ovs.get(okey, {}),
+                             key="s_i_unset"):
+                    ov = {kk: v for kk, v in ovs.get(okey, {}).items()
+                          if kk not in ("circuit", "initial", "fixed", "bounds")}
+                    _store(ov)
+                    ss["reset_" + itkey] = True
+                    st.info("This spectrum will use the series settings at the next **Analyse spectra**.")
+                if c3.button("Reset this table", key="s_i_reset"):
+                    ss["reset_" + itkey] = True
+                    st.rerun()
+
+    # ---------------- DRT
+    with t_drt:
+        d = r.drt
+        if d is None:
+            st.info("No DRT for this spectrum (tick *Compute DRT* above, or see its notes).")
+        else:
+            mt = d.metrics
+            st.markdown(f"**R∞** = {d.R_inf:.4g} Ω · **L** = {d.L:.3g} H · **λ** = {d.lam:.3g} · **R_pol** = "
+                        f"∫γ d ln τ = {d.R_pol:.4g} Ω · mean |Δ| Re/Im = {mt['mean_abs_rel_res_re_pct']:.2f} / "
+                        f"{mt['mean_abs_rel_res_im_pct']:.2f} % · data down to {d.freq.min():.3g} Hz"
+                        + (" (low-frequency tail cut)" if r.drt_f_cut else ""))
+            if d.peaks:
+                st.dataframe(pd.DataFrame([{
+                    "peak": f"P{p['peak']}" + (" *" if p["minor"] else "") + (" †" if p.get("outside") else ""),
+                    "τ / s": f"{p['tau_s']:.3g}",
+                    "f = 1/(2πτ) / Hz": f"{p['f_Hz']:.3g}", "R / Ω": f"{p['R_ohm']:.4g}",
+                    "share": f"{p['share_pct']:.1f} %", "C = τ/R / F": f"{p['C_eq_F']:.3g}",
+                    "flag": _peak_flag(p, d, r.drt_f_cut is not None)} for p in d.peaks]),
+                    hide_index=True, width="stretch")
+                st.caption("\\* minor peak (< 3 % of the area) · † outside the measured window: position and area "
+                           "extrapolated (at the long-τ end usually the onset of the blocking tail).")
+            a_re, a_im = ecmm.relative_residuals(d.Z, d.Z_fit)
+            comp = pl.fig_drt_composite(width, d.freq, d.Z, d.Z_fit, a_re, a_im, d.tau, d.gamma, d.gamma_lo,
+                                        d.gamma_hi, d.gamma_mean, d.peaks, 1.0, "Ω", True, gm, fs, zoom_i)
+            _show(comp)
+            c1, c2, c3 = st.columns(3)
+            _fig_downloads(comp, f"{stem}_DRT", "s_i_dl_drt", c1)
+            _dl(c2, "⬇ γ(τ) (.csv)", ex.csv_bytes(ex.drt_gamma_df(d)), file_name=f"{stem}_DRT_gamma.csv",
+                mime="text/csv", key="s_i_dl_gamma")
+            _dl(c3, "⬇ Summary & peaks (.csv)", ex.csv_bytes(ex.drt_summary_df(d, None)),
+                file_name=f"{stem}_DRT_summary.csv", mime="text/csv", key="s_i_dl_drtsum")
+        st.markdown("**Low-frequency limit for this spectrum's DRT**")
+        cur = ovs.get(okey, {}).get("drt_f_min")
+        c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+        fmin = c1.number_input("Lowest frequency given to the DRT (Hz; 0 = the series rule)",
+                               value=float(cur or 0.0), min_value=0.0, format="%.4g", key=f"s_i_fmin_{okey}",
+                               help="Move it and compare: a real process stays where it is, the peak made by the "
+                                    "onset of a blocking tail follows the cut.")
+        if c2.button("Recompute DRT", key="s_i_drt", disabled=drt_s is None):
+            try:
+                with st.spinner("Computing DRT…"):
+                    new_d, fc = S.analyse_drt(m, drt_s, f_window, cut, theta, fmin or None)
+                r.drt, r.drt_f_cut = new_d, fc
+                r.notes = [n for n in r.notes if not n.startswith("DRT")] + [f"DRT: {w}" for w in new_d.warnings]
+                ov = {kk: v for kk, v in ovs.get(okey, {}).items() if kk != "drt_f_min"}
+                if fmin:
+                    ov["drt_f_min"] = float(fmin)
+                _store(ov)
+                st.rerun()
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"DRT failed: {exc}")
+        if cur:
+            c3.caption(f"Set for this spectrum: {cur:g} Hz")
+
+    # ---------------- KK
+    with t_kk:
+        kk = r.kk
+        if kk is None:
+            st.info("No Kramers–Kronig check for this spectrum.")
+        else:
+            verdict = ("✅ residuals within ±1 %: consistent" if kk["max_abs_res_pct"] < 1 else
+                       "⚠️ some residuals exceed 1 %: inspect where" if kk["max_abs_res_pct"] < 3 else
+                       "❌ residuals exceed 3 %: the spectrum (or part of it) is not KK-consistent")
+            st.markdown(f"M = {kk['M']} RC elements · μ = {kk['mu']:.3f} · mean |res| = "
+                        f"{kk['mean_abs_res_pct']:.2f} % · max |res| = {kk['max_abs_res_pct']:.2f} % · {verdict}")
+            f_kk = S._window(m.freq, m.Z, f_window)[0]
+            kfig = pl.fig_kk(width, f_kk, kk["res_re_pct"], kk["res_im_pct"], kk["M"], font_size=fs)
+            _show(kfig)
+            c1, c2 = st.columns(2)
+            _fig_downloads(kfig, f"{stem}_linKK", "s_i_dl_kk", c1)
+            _dl(c2, "⬇ KK residuals (.csv)", ex.csv_bytes(pd.DataFrame({
+                "freq_Hz": f_kk, "res_re_pct": kk["res_re_pct"], "res_im_pct": kk["res_im_pct"]})),
+                file_name=f"{stem}_linKK.csv", mime="text/csv", key="s_i_dl_kkcsv")
+            st.caption("Lin-KK (Schönleber et al. 2014, as implemented in impedance.py). Isolated spikes in the "
+                       "residuals at round frequencies (e.g. 50 Hz, or a decade such as 1 kHz or 10 kHz where the "
+                       "instrument changes current range) point to the measurement rather than the sample.")
 
 
 def render():
@@ -231,30 +441,12 @@ def render():
         if not eis_rows:
             st.info("No impedance spectra selected.")
         else:
-            with st.form("s_eis_form"):
-                c1, c2 = st.columns([1.3, 1])
-                method_lbl = c1.selectbox("Ionic resistance from", list(S.R_METHODS), index=0)
-                preset = c2.selectbox("Circuit preset", list(PRESETS), index=0)
-                circuit = st.text_input("Circuit (impedance.py syntax), used when fitting",
-                                        value=PRESETS[preset] or ss.get("s_circuit_custom", "p(R1,CPE1)-CPE2"))
-                c1, c2, c3 = st.columns(3)
-                rsel = c1.text_input("Resistances that make up the ionic resistance",
-                                     value="all", help="Comma-separated element names (e.g. R1 for bulk, "
-                                     "R1,R2 for total), or 'all'.")
-                n_starts = c2.number_input("Multi-start fits per spectrum", 1, 20, 4)
-                tsel = c3.selectbox("Arrhenius quantity", ["σT (S cm⁻¹ K)", "σ (S cm⁻¹)"], index=0,
-                                    help="ln(σT) vs 1/T follows from the Nernst–Einstein relation and is the usual "
-                                         "choice for ionic conductors; Eₐ from σ differs by about kT.")
-                c1, c2, c3, c4 = st.columns(4)
-                do_drt = c1.checkbox("Compute DRT", value=True)
-                lam = c2.number_input("DRT λ (manual)", value=1e-3, min_value=1e-8, format="%.1e")
-                trim = c3.checkbox("Leave the blocking spike out of the DRT", value=True,
-                                   help="Points after the minimum of −Z″ (the capacitive tail) have no finite "
-                                        "resistance and distort a DRT.")
-                fwin = c4.text_input("Frequency window (Hz), e.g. 1e6-10", value="",
-                                     help="Applied to every spectrum. Empty = all points.")
-                go = st.form_submit_button("Analyse spectra", type="primary")
-            ss["s_circuit_custom"] = circuit
+            ref_i, ref_m = eis_rows[0]
+            st.markdown("#### Settings")
+            c1, c2 = st.columns([1.4, 1])
+            method_lbl = c1.selectbox("Ionic resistance from", list(S.R_METHODS), index=0, key="s_method")
+            fwin = c2.text_input("Frequency window (Hz), e.g. 1e6-10", value="", key="s_fwin",
+                                 help="Applied to every spectrum (fit, DRT and KK check). Empty = all points.")
             method = S.R_METHODS[method_lbl]
             f_window = None
             if fwin.strip():
@@ -264,42 +456,109 @@ def render():
                     f_window = (min(a, b), max(a, b))
                 except ValueError:
                     st.error("Frequency window: write it as 'high-low', e.g. 1e6-10.")
-            r_names = None if rsel.strip().lower() in ("", "all") else [x.strip() for x in rsel.split(",")]
-            akey = _h(fkey, method, circuit, r_names, int(n_starts), do_drt, lam, trim, f_window,
-                      [(i, _num(table.at[i, "T (°C)"])) for i, _ in eis_rows])
-            if go:
-                if method == "ecm":
+
+            circuit, r_names, names, units = "", None, [], []
+            initial = fixed = bounds = None
+            start, wkey, wlbl, n_starts, global_opt, ptable = "data", "modulus", "", 4, False, None
+            ecm_ok = True
+            if method == "ecm":
+                with st.container(border=True):
+                    circuit = circuit_block("s_", "p(R1,CPE1)-CPE2", presets=EDITOR_PRESETS, file_stem="series",
+                                            width=width, font_size=fs, dpi=ss.s_dpi)
                     try:
-                        ecmm.parse_circuit(circuit)
+                        names, units = ecmm.parse_circuit(circuit) if circuit else ([], [])
                     except Exception as exc:  # noqa: BLE001
                         st.error(f"Circuit error: {exc}")
-                        st.stop()
-                results = {}
-                bar = st.progress(0.0, text="Analysing…")
-                for k, (i, m) in enumerate(eis_rows):
-                    bar.progress(k / len(eis_rows), text=f"{m.name}: resistance…")
-                    r = S.analyse_spectrum(m, _num(table.at[i, "T (°C)"]), method, None, circuit, r_names,
-                                           int(n_starts), 20.0, f_window)
-                    if do_drt:
-                        bar.progress((k + 0.5) / len(eis_rows), text=f"{m.name}: DRT…")
-                        f_, Z_ = m.freq, m.Z
-                        if f_window:
-                            keep = (f_ >= f_window[0]) & (f_ <= f_window[1])
-                            f_, Z_ = f_[keep], Z_[keep]
-                        if trim:
-                            j = S.tail_start(f_, Z_)
-                            if j is not None:
-                                f_, Z_ = f_[:j + 1], Z_[:j + 1]
+                    ecm_ok = bool(names)
+                    if ecm_ok:
+                        r_all = [n for n in names if ecmm.element_type(n) == "R"]
+                        r_names = st.multiselect(
+                            "Resistances that make up the ionic resistance", r_all, default=r_all,
+                            key=f"s_rsel_{circuit}",
+                            help="E.g. the bulk arc only, or bulk + grain boundary for the total conductivity. "
+                                 "Leave out a lead/contact resistance (an R0 at the high-frequency intercept).")
+                        if not r_names:
+                            st.error("Choose at least one resistance.")
+                            ecm_ok = False
+                        start_lbl = st.radio(
+                            "Starting values", list(S.START_MODES), key="s_start", horizontal=True,
+                            help="Data-informed guesses are made for each spectrum from its own arcs and are the "
+                                 "safest default. The table's values suit spectra that are all alike. Starting "
+                                 "from the previous spectrum's result follows a temperature series smoothly, but "
+                                 "one wrong minimum is carried on to the next spectra.")
+                        start = S.START_MODES[start_lbl]
+                        tkey = f"s_ptable_{circuit}_{fkey}_{ref_i}"
+                        if tkey not in ss or ss.get("reset_" + tkey):
+                            ss[tkey] = param_table_df(names, units, ecmm.default_guess(names, ref_m.freq, ref_m.Z,
+                                                                                       circuit), circuit)
+                            ss["reset_" + tkey] = False
+                        st.caption(
+                            f"**fixed** values and **bounds** apply to every spectrum. The **initial** values are "
+                            f"the data-informed guesses for {ref_m.name} (the first spectrum); they are used for "
+                            "every spectrum only with the second starting option, and for the first spectrum with "
+                            "the third. Fixing a CPE exponent across a series is common; fixing a resistance or "
+                            "a Q is rarely physical, since both change with temperature.")
+                        ptable = edit_param_table(ss[tkey], f"s_ed_{tkey}")
+                        wkey, n_starts, global_opt, wlbl = fit_options("s_", 4)
+                        if st.button("Reset table", key="s_reset_table"):
+                            ss["reset_" + tkey] = True
+                            st.rerun()
                         try:
-                            r.drt = drtm.run_drt(f_, Z_, drtm.DRTSettings(cv_type="custom", reg_param=float(lam),
-                                                                          inductance="discard"))
-                            r.notes += [f"DRT: {w}" for w in r.drt.warnings]
-                        except Exception as exc:  # noqa: BLE001
-                            r.notes.append(f"DRT failed: {exc}")
-                    results[i] = r
-                bar.progress(1.0, text="Done")
-                bar.empty()
-                ss["s_results"], ss["s_results_key"] = results, akey
+                            initial, fixed, bounds = read_param_table(ptable)
+                        except ValueError as exc:
+                            st.error(str(exc))
+                            ecm_ok = False
+
+            with st.form("s_drt_form"):
+                st.markdown("**DRT**")
+                c1, c2, c3 = st.columns([0.8, 2.2, 0.8])
+                do_drt = c1.checkbox("Compute DRT", value=True, key="s_do_drt")
+                cut_lbl = c2.selectbox(
+                    "Blocking-electrode tail", list(S.DRT_CUTS), index=0, key="s_drt_cut",
+                    help="A capacitive tail has no finite resistance; the DRT turns whatever part of it is "
+                         "included into a large peak at the long-τ end of the data. Cutting at the −Z″ minimum "
+                         "is the most conservative choice but also drops anything between the arcs and the "
+                         "steep tail. Cutting where −phase first exceeds θ keeps that near-real-axis stretch, but "
+                         "note that a depressed tail (CPE exponent well below 1) has a real part of its own: Z′ "
+                         "keeps rising past the junction with no further process, so those points mostly describe "
+                         "the tail. "
+                         "Each spectrum's cut is shown in the results table, and its DRT is drawn dotted beyond "
+                         "it. A different limit can be set per spectrum in the inspector below.")
+                theta = c3.number_input("θ (°)", 1.0, 80.0, 15.0, step=5.0, key="s_drt_theta",
+                                        help="Used by the phase rule only.")
+                drt_s, gmode = drt_inputs(
+                    "s_", lam_default="custom",
+                    lam_help="Manual by default in series mode: the same λ for every spectrum keeps the DRTs "
+                             "comparable. Automatic criteria pick very different λ from spectrum to spectrum, and "
+                             "with part of a blocking tail included they often run to the edge of the search "
+                             "range (under-regularised).")
+                go = st.form_submit_button("Analyse spectra", type="primary")
+            cut = S.DRT_CUTS[cut_lbl]
+
+            ovs = ss.setdefault("s_overrides", {})
+            ov_now = {int(k.split(":", 1)[1]): v for k, v in ovs.items() if k.split(":", 1)[0] == fkey}
+            temps = [(i, _num(table.at[i, "T (°C)"])) for i, _ in eis_rows]
+            time_budget = 60.0 if global_opt else 20.0
+
+            def akey_of(ov):
+                return _h(fkey, method, circuit, r_names, ptable.to_json() if ptable is not None else None, start,
+                          wkey, n_starts, global_opt, do_drt, sorted(drt_s.__dict__.items()), cut, theta, f_window,
+                          temps, sorted((k, sorted(v.items())) for k, v in ov.items()))
+            akey = akey_of(ov_now)
+            if go:
+                if method == "ecm" and not ecm_ok:
+                    st.error("Fix the circuit or the parameter table first.")
+                else:
+                    if drt_s.bayesian and do_drt:
+                        st.info(f"HMC sampling for {len(eis_rows)} spectra: this takes a while.")
+                    bar = st.progress(0.0, text="Analysing…")
+                    results = S.analyse_series(
+                        [(i, m, _num(table.at[i, "T (°C)"])) for i, m in eis_rows], method, circuit, r_names,
+                        n_starts, time_budget, f_window, start, initial, fixed, bounds, wkey, global_opt,
+                        drt_s if do_drt else None, cut, theta, True, ov_now,
+                        progress=lambda f, t: bar.progress(min(max(f, 0.0), 1.0), text=t))
+                    bar.empty()
+                    ss["s_results"], ss["s_results_key"] = results, akey
             results = ss.get("s_results")
             if results is not None and ss.get("s_results_key") != akey:
                 st.info("Settings or temperatures changed since the last analysis. Press **Analyse spectra** to "
@@ -311,6 +570,7 @@ def render():
             # per-spectrum table (conductivity uses each sample's own geometry)
             rows, sig_ok, arr = [], [], None
             if results:
+                st.markdown("#### Results")
                 for i, m in eis_rows:
                     r = results[i]
                     g = geom_of(i)
@@ -323,13 +583,23 @@ def render():
                                  "L/A (1/cm)": g.cell_constant_per_cm if g else None,
                                  "ρ (g/cm³)": rho, "ρ_rel": rrel,
                                  "fit: max |res| (%)": (r.fit.metrics.get("max_abs_rel_res_pct") if r.fit else None),
+                                 "KK: max |res| (%)": r.kk["max_abs_res_pct"] if r.kk else None,
+                                 "DRT down to (Hz)": (r.drt_f_cut if r.drt_f_cut else
+                                                      (float(r.drt.freq.min()) if r.drt is not None else None)),
+                                 "own settings": "yes" if r.individual else "",
                                  "notes": " · ".join(r.notes)})
                     if c and T is not None:
                         sig_ok.append((i, T, c["sigma_S_cm"], c["dsigma_S_cm"]))
                 df = pd.DataFrame(rows)
                 st.dataframe(df.drop(columns=["notes"]), hide_index=True, width="stretch",
                              column_config={k: st.column_config.NumberColumn(format="%.3e" if "σ" in k else "%.4g")
-                                            for k in df.columns if k not in ("spectrum", "file", "notes")})
+                                            for k in df.columns if k not in ("spectrum", "file", "notes",
+                                                                             "own settings")})
+                bad_kk = [r["spectrum"] for r in rows if r["KK: max |res| (%)"] and r["KK: max |res| (%)"] > 3]
+                if bad_kk:
+                    st.warning(f"Lin-KK residuals exceed 3 % for {', '.join(bad_kk)}. Part of those spectra is not "
+                               "consistent with a linear, stable system (drift, noise, a current-range switch); "
+                               "see the KK tab in the inspector below for where.")
                 bad = [(r["spectrum"], r["notes"]) for r in rows if r["notes"]]
                 if bad:
                     with st.expander(f"Notes and warnings ({len(bad)} spectra)"):
@@ -339,6 +609,9 @@ def render():
                     st.info("Enter thickness and diameter (sidebar or table) to get conductivities.")
                 outputs["csv"]["series_spectra_results.csv"] = ex.csv_bytes(df)
 
+                tsel = st.selectbox("Arrhenius quantity", ["σT (S cm⁻¹ K)", "σ (S cm⁻¹)"], index=0, key="s_tsel",
+                                    help="ln(σT) vs 1/T follows from the Nernst–Einstein relation and is the usual "
+                                         "choice for ionic conductors; Eₐ from σ differs by about kT.")
                 if len(sig_ok) >= 2 and len({t for _, t, _, _ in sig_ok}) >= 2:
                     try:
                         arr = S.arrhenius([t for _, t, _, _ in sig_ok], [s for _, _, s, _ in sig_ok],
@@ -372,8 +645,87 @@ def render():
                 elif len(eis_rows) > 1:
                     st.caption("Enter at least two different temperatures to fit an activation energy.")
 
+                # ---------------- fitted parameters across the series
+                fits = [(i, m, results[i]) for i, m in eis_rows if results[i].fit is not None]
+                if fits:
+                    st.markdown("#### Fitted parameters")
+                    prow, qcols = [], []
+                    for i, m, r in fits:
+                        row = {"spectrum": m.name, "T (°C)": _num(table.at[i, "T (°C)"])}
+                        for n, u, v, e, fx in r.fit.all_params():
+                            row[n] = v
+                            row[f"± {n}"] = None if fx else e
+                            if n not in qcols:
+                                qcols.append(n)
+                        for d in r.fit.derived:
+                            for lab, kk in ((f"C_eff {d['pair']} (F)", "C_eff_F"), (f"f_c {d['pair']} (Hz)", "f_c_Hz")):
+                                row[lab] = d[kk]
+                                if lab not in qcols:
+                                    qcols.append(lab)
+                        row["fixed"] = ", ".join(n for n, *_, fx in r.fit.all_params() if fx)
+                        row["starts at best minimum"] = (f"{r.fit.metrics.get('n_starts_at_best_minimum', 1)}/"
+                                                         f"{r.fit.metrics.get('n_starts_converged', 1)}")
+                        prow.append(row)
+                    dfp = pd.DataFrame(prow)
+                    st.dataframe(dfp, hide_index=True, width="stretch",
+                                 column_config={k: st.column_config.NumberColumn(format="%.4g") for k in dfp.columns
+                                                if k not in ("spectrum", "fixed", "starts at best minimum")})
+                    outputs["csv"]["series_fit_parameters.csv"] = ex.csv_bytes(dfp)
+                    c1, c2 = st.columns([1, 1.6])
+                    q = c1.selectbox("Plot a parameter", qcols, key=f"s_trend_{circuit}",
+                                     help="A bulk arc's effective capacitance should change little with "
+                                          "temperature; a jump in C_eff or α between neighbouring spectra usually "
+                                          "means the fit assigned the arc to a different process there.")
+                    Ts = [_num(table.at[i, "T (°C)"]) for i, _, _ in fits]
+                    use_T = all(t is not None for t in Ts)
+                    xs = Ts if use_T else list(range(1, len(fits) + 1))
+                    ys = [row.get(q, np.nan) for row in prow]
+                    dys = [row.get(f"± {q}", None) for row in prow]
+                    dys = [np.nan if v is None else v for v in dys]
+                    unit_q = units[names.index(q)] if q in names else ""
+                    fig_t = sp.fig_param_trend(width, xs, ys, dys, "T / °C" if use_T else "spectrum",
+                                               f"{q} / {unit_q}" if unit_q and "(" not in q else q,
+                                               sp.series_colors(Ts)[0] if use_T else None, None,
+                                               logy=not q.endswith("_1"), font_size=fs)
+                    with c2:
+                        _show(fig_t)
+                        _fig_downloads(fig_t, f"series_trend_{q}".replace(" ", "_").replace("(", "").replace(")", ""),
+                                       "s_dl_trend")
+                    outputs["figures"]["series_parameter_trend"] = fig_t
+
+                # ---------------- DRT peaks across the series
+                drts_r = [(i, m, results[i]) for i, m in eis_rows if results[i].drt is not None]
+                if drts_r:
+                    st.markdown("#### DRT peaks")
+                    pk_rows = []
+                    for i, m, r in drts_r:
+                        d = r.drt
+                        for p in d.peaks:
+                            pk_rows.append({
+                                "spectrum": m.name, "T (°C)": _num(table.at[i, "T (°C)"]), "peak": f"P{p['peak']}",
+                                "τ (s)": p["tau_s"], "f = 1/(2πτ) (Hz)": p["f_Hz"], "R (Ω)": p["R_ohm"],
+                                "share (%)": p["share_pct"], "C = τ/R (F)": p["C_eq_F"],
+                                "λ": d.lam, "R∞ (Ω)": d.R_inf,
+                                "flag": _peak_flag(p, d, r.drt_f_cut is not None)})
+                    if pk_rows:
+                        dpk = pd.DataFrame(pk_rows)
+                        st.dataframe(dpk, hide_index=True, width="stretch",
+                                     column_config={k: st.column_config.NumberColumn(format="%.3g") for k in dpk.columns
+                                                    if k not in ("spectrum", "peak", "flag")})
+                        st.caption("A peak at the long-τ end of a spectrum's data (flag *near the low-f cut*) is "
+                                   "usually the onset of the blocking tail rather than a process: check it by "
+                                   "moving that spectrum's low-frequency limit in the inspector; a real process "
+                                   "stays put, the tail artefact follows the cut. Peak R is integrated between "
+                                   "adjacent minima of γ, so for overlapping peaks the split is approximate.")
+                        outputs["csv"]["series_drt_peaks.csv"] = ex.csv_bytes(dpk)
+                    lams = [r.drt.lam for _, _, r in drts_r]
+                    if max(lams) / max(min(lams), 1e-300) > 10:
+                        st.warning(f"λ differs by a factor {max(lams) / min(lams):.0f} between spectra (automatic "
+                                   "selection). DRTs regularised that differently are not directly comparable: "
+                                   "peak heights and widths change with λ. Consider one manual λ for the series.")
+
             # ---------------- figures
-            st.subheader("Figures")
+            st.markdown("#### Figures")
             c1, c2, c3, c4 = st.columns([2.2, 0.8, 1, 1])
             norm_lbl = c1.selectbox("Normalise impedance", list(S.NORM_MODES), index=0, key="s_norm",
                                     help="Geometry removes thickness/area differences between pellets. Density also "
@@ -383,11 +735,16 @@ def render():
                                     disabled=S.NORM_MODES[norm_lbl] != "dense")
             drt_x = c3.selectbox("DRT x-axis", ["τ (s)", "f = 1/(2πτ) (Hz)"], key="s_drtx")
             show_fit = c4.checkbox("Show fits", value=True, key="s_showfit")
-            c1, c2 = st.columns([1, 2])
+            c1, c3, c2 = st.columns([1, 1, 1.4])
             hide = c1.checkbox("Hide blocking spikes in the Nyquist plot", value=True, key="s_hide")
+            fit_arcs = c3.checkbox("Scale the DRT axis to the arcs", value=True, key="s_drt_arcs",
+                                   help="Peaks made by the onset of the blocking tail (near or beyond each "
+                                        "spectrum's low-frequency cut) are usually far taller than the arcs. With "
+                                        "this on they run off the top of the panel instead of flattening the arcs.")
             zoom = c2.number_input("…or show Z′ up to (plotted units; 0 = automatic)", value=0.0, min_value=0.0,
                                    format="%.4g", key="s_zoom")
             mode = S.NORM_MODES[norm_lbl]
+            gm = "g" if ss.get("s_drt_gmode", GAMMA_MODES[0]) != GAMMA_MODES[0] else "gamma"
             colors, by_T = sp.series_colors([_num(table.at[i, "T (°C)"]) for i, _ in eis_rows])
             items, unit, missing = [], None, []
             for (i, m), col in zip(eis_rows, colors):
@@ -407,6 +764,7 @@ def render():
                     it["f_line"], it["Z_line"] = r.fit.f_smooth, r.fit.Z_smooth * k
                 if r is not None and r.drt is not None:
                     it["tau"], it["gamma"] = r.drt.tau, r.drt.gamma * k
+                    it["tau_cut"] = 1 / (2 * np.pi * r.drt_f_cut) if r.drt_f_cut else None
                 items.append(it)
             if missing:
                 st.warning(f"Normalisation not possible for {', '.join(missing)} (needs "
@@ -417,11 +775,16 @@ def render():
             if mode == "shape":
                 unit_lbl = "R"
             fig_eis = sp.fig_series_eis(width, items, unit_lbl, fs, zoom if zoom else ("auto" if hide else None),
-                                        "tau" if drt_x.startswith("τ") else "f")
+                                        "tau" if drt_x.startswith("τ") else "f", gm, fit_arcs)
             _show(fig_eis)
             _fig_downloads(fig_eis, "series_impedance", "s_dl_eis")
+            cap = []
             if by_T:
-                st.caption("Colours run from dark blue (coldest) to orange (hottest).")
+                cap.append("Colours run from dark blue (coldest) to orange (hottest).")
+            if any(it.get("tau_cut") for it in items):
+                cap.append("Each DRT is drawn dotted beyond the lowest frequency it was given.")
+            if cap:
+                st.caption(" ".join(cap))
             outputs["figures"]["series_impedance"] = fig_eis
             if results and sig_ok and arr:
                 cols_T = sp.series_colors([t for _, t, _, _ in sig_ok])[0]
@@ -439,14 +802,25 @@ def render():
                                           f"minus_Zim_plotted_{unit_lbl}": -it["Z"].imag}))
             outputs["csv"]["series_spectra_data.csv"] = ex.csv_bytes(pd.concat(long))
             drts = [pd.DataFrame({"spectrum": m.name, "T_C": _num(table.at[i, "T (°C)"]), "tau_s": it["tau"],
-                                  "f_Hz": 1 / (2 * np.pi * it["tau"]), f"gamma_plotted_{unit_lbl}": it["gamma"]})
+                                  "f_Hz": 1 / (2 * np.pi * it["tau"]), f"gamma_plotted_{unit_lbl}": it["gamma"],
+                                  "beyond_low_f_cut": (it["tau"] > it["tau_cut"]) if it.get("tau_cut") else False})
                     for (i, m), it in zip(eis_rows, items) if it.get("tau") is not None]
             if drts:
                 outputs["csv"]["series_drt.csv"] = ex.csv_bytes(pd.concat(drts))
-            outputs["settings"]["impedance"] = {"method": method_lbl, "circuit": circuit, "resistances": rsel,
-                                                "n_starts": int(n_starts), "drt": do_drt, "drt_lambda": lam,
-                                                "drt_trim_spike": trim, "f_window_Hz": f_window,
-                                                "arrhenius": tsel, "normalisation": norm_lbl, "m": m_exp}
+
+            # ---------------- one spectrum in detail
+            if results:
+                _inspector(eis_rows, results, table, label_of, method, circuit, r_names, names, units, n_starts,
+                           time_budget, f_window, wkey, global_opt, drt_s, cut, theta, gm, fkey, width, fs,
+                           zoom if zoom else ("auto" if hide else None), akey_of, ecm_ok)
+
+            outputs["settings"]["impedance"] = {
+                "method": method_lbl, "circuit": circuit, "resistances": r_names, "starting_values": start,
+                "parameter_table": ptable.to_dict(orient="records") if ptable is not None else None,
+                "weighting": wlbl, "n_starts": int(n_starts), "basin_hopping": global_opt,
+                "drt": do_drt, "drt_settings": drt_s.__dict__, "drt_tail_cut": cut_lbl, "drt_theta_deg": theta,
+                "f_window_Hz": f_window, "arrhenius": ss.get("s_tsel"), "normalisation": norm_lbl, "m": m_exp,
+                "individual_settings": {meas[i].name: v for i, v in ov_now.items()}}
 
     # ------------------------------------------------------------------ DC polarisation
     with tab_dc:

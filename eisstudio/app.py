@@ -21,9 +21,9 @@ from eisstudio import export as ex
 from eisstudio import io as eio
 from eisstudio import plotting as pl
 from eisstudio import validation as val
-from eisstudio import circuit_tree as ct
 from eisstudio.circuit_draw import circuit_figure
-from eisstudio.circuit_editor import circuit_editor
+from eisstudio.ui_shared import (circuit_block, drt_inputs, edit_param_table, fit_options, param_table_df,
+                                  read_param_table)
 
 SAMPLES = Path(__file__).parent / "sample_data"
 
@@ -39,18 +39,6 @@ def _fmt(v, digits=4):
     if v is None or (isinstance(v, float) and not np.isfinite(v)):
         return "–"
     return f"{v:.{digits}g}"
-
-
-def _parse_float(text, name):
-    t = str(text).strip().lower().replace(",", ".")
-    if t in ("inf", "+inf", "∞"):
-        return np.inf
-    if t in ("-inf", "-∞"):
-        return -np.inf
-    try:
-        return float(t)
-    except ValueError as exc:
-        raise ValueError(f"'{text}' for {name} is not a number.") from exc
 
 
 def _hash(*parts):
@@ -296,62 +284,9 @@ with tab_data:
 
 # ---------------------------- ECM TAB -------------------------------------- #
 with tab_ecm:
-    # One source of truth: st.session_state["circuit_text"]. The visual editor and the text box
-    # both write to it; changes are applied at the top of the next run (widgets can't be changed
-    # after they are drawn), and every change is kept in a history for Undo.
     ss = st.session_state
-    ss.setdefault("circuit_text", "R0-p(R1,CPE1)-CPE2")
-    ss.setdefault("circuit_hist", [])
-    if "circuit_pending" in ss:
-        new_text = ss.pop("circuit_pending")
-        if new_text != ss["circuit_text"]:
-            ss["circuit_hist"].append(ss["circuit_text"])
-            del ss["circuit_hist"][:-50]
-            ss["circuit_text"] = new_text
-        ss["circuit_input"] = ss["circuit_text"]
-    ss.setdefault("circuit_input", ss["circuit_text"])
-
-    def _typed():
-        try:
-            parsed = ct.parse(ss["circuit_input"])
-        except ct.CircuitSyntaxError as exc:
-            ss["circuit_typed_error"] = str(exc)
-            return
-        ss.pop("circuit_typed_error", None)
-        ss["circuit_pending"] = ct.to_string(parsed) if parsed else ""
-
-    st.markdown("**Equivalent circuit**: pick a preset, or drag elements onto the canvas. Drop beside an "
-                "element to connect it in series, above or below to connect it in parallel.")
-    edited = circuit_editor(ss["circuit_text"])
-    if edited is not None:
-        ss["circuit_pending"] = ct.to_string(edited.get("tree"))
-        st.rerun()
-    c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
-    c1.text_input("Circuit string (impedance.py syntax; edit directly if you prefer typing)", key="circuit_input",
-                  on_change=_typed, help="`-` joins elements in series, `p(a,b,…)` puts them in parallel, and "
-                  "elements are numbered: R0-p(R1,CPE1)-CPE2. Element definitions: "
-                  "https://impedancepy.readthedocs.io/en/latest/circuit-elements.html")
-    if c2.button("Undo", disabled=not ss["circuit_hist"], width="stretch"):
-        ss["circuit_text"] = ss["circuit_hist"].pop()
-        ss["circuit_pending"] = ss["circuit_text"]
-        st.rerun()
-    if ss.get("circuit_typed_error"):
-        st.error(f"Circuit string not applied: {ss['circuit_typed_error']}")
-    circuit = ss["circuit_text"]
-    if circuit:
-        try:
-            cfig = circuit_figure(circuit, width_in=min(width, 7.0), font_size=fs)
-            cols = st.columns([2.2, 1, 1, 1, 1])
-            cols[0].markdown("**Download the circuit diagram**", help="Drawn like the other figures (fonts, line "
-                             "weights, width from the sidebar). Vector formats keep the text editable.")
-            for col, fmt in zip(cols[1:], ("png", "pdf", "svg", "tiff")):
-                dl(col, fmt.upper(), _deferred(cfig, fmt, st.session_state.fig_dpi),
-                                    file_name=f"{data.name}_circuit.{fmt}",
-                                    mime=pl.MIME[fmt], key=f"circ_dl_{fmt}", width="stretch")
-        except Exception as exc:  # noqa: BLE001 - drawing must never block fitting
-            st.caption(f"Circuit diagram unavailable: {exc}")
-    if not circuit:
-        st.info("The circuit is empty. Choose a preset or drag an element onto the canvas.")
+    circuit = circuit_block("", "R0-p(R1,CPE1)-CPE2", file_stem=data.name, width=width, font_size=fs,
+                            dpi=st.session_state.fig_dpi)
 
     try:
         names, units = ecmm.parse_circuit(circuit) if circuit else ([], [])
@@ -364,34 +299,13 @@ with tab_ecm:
         tkey = f"ptable_{circuit}_{_hash(data.freq, data.Z)}"
         if tkey not in st.session_state or st.session_state.get("reset_" + tkey):
             g = ecmm.default_guess(names, data.freq, data.Z, circuit)
-            bd = ecmm.default_bounds(circuit)
-            st.session_state[tkey] = pd.DataFrame({
-                "parameter": names, "unit": units,
-                "initial": [f"{v:.4g}" for v in g],
-                "fixed": [False] * len(names),
-                "lower": [f"{bd[n][0]:g}" for n in names],
-                "upper": ["inf" if not np.isfinite(bd[n][1]) else f"{bd[n][1]:g}" for n in names],
-            })
+            st.session_state[tkey] = param_table_df(names, units, g, circuit)
             st.session_state["reset_" + tkey] = False
         st.caption("Initial values are data-informed guesses. Edit them, tick **fixed** to hold a parameter "
                    "constant at its initial value, or tighten bounds (type `inf` for no upper bound).")
-        table = st.data_editor(
-            st.session_state[tkey], key=f"ed_{tkey}", hide_index=True, width="stretch",
-            disabled=["parameter", "unit"],
-            column_config={"fixed": st.column_config.CheckboxColumn("fixed"),
-                           "initial": st.column_config.TextColumn("initial"),
-                           "lower": st.column_config.TextColumn("lower"),
-                           "upper": st.column_config.TextColumn("upper")})
-        c1, c2, c3, c4 = st.columns([2, 1.3, 1.2, 1])
-        weighting = c1.selectbox("Weighting", list(ecmm.WEIGHTINGS), index=0,
-                                 help="Modulus weighting is the usual choice when measurement variances are "
-                                      "unknown; unit weighting over-weights the largest |Z| points.")
-        n_starts = c2.number_input("Multi-start fits", 1, 50, 8,
-                                   help="Refit from N log-perturbed starting points and keep the best. Also "
-                                        "detects non-identifiable parameters.")
-        global_opt = c3.checkbox("Basin-hopping", value=False,
-                                 help="impedance.py's global optimiser (slow; no weighting, RMSE objective).")
-        if c4.button("Reset table"):
+        table = edit_param_table(st.session_state[tkey], f"ed_{tkey}")
+        wkey, n_starts, global_opt, weighting = fit_options("", 8)
+        if st.button("Reset table"):
             st.session_state["reset_" + tkey] = True
             st.rerun()
 
@@ -399,18 +313,10 @@ with tab_ecm:
         fit_key = _hash(circuit, table.to_json(), weighting, n_starts, global_opt, data.freq, data.Z)
         if run_ecm:
             try:
-                initial, fixed, bounds = {}, {}, {}
-                for _, r in table.iterrows():
-                    v = _parse_float(r["initial"], r["parameter"])
-                    if bool(r["fixed"]):
-                        fixed[r["parameter"]] = v
-                    else:
-                        initial[r["parameter"]] = v
-                        bounds[r["parameter"]] = (_parse_float(r["lower"], r["parameter"]),
-                                                  _parse_float(r["upper"], r["parameter"]))
+                initial, fixed, bounds = read_param_table(table)
                 with st.spinner("Fitting… (stops after at most 45 s)"):
                     res = ecmm.fit_ecm(data.freq, data.Z, circuit, initial, fixed, bounds,
-                                       ecmm.WEIGHTINGS[weighting], global_opt, int(n_starts))
+                                       wkey, global_opt, int(n_starts))
                 st.session_state["ecm_res"] = res
                 st.session_state["ecm_key"] = fit_key
                 st.session_state["ecm_settings"] = {
@@ -519,28 +425,10 @@ with tab_drt:
     st.markdown("Ridge-regularised DRT (Tikhonov) with RBF discretisation, as implemented in pyDRTtools. "
                 "γ is per unit ln τ, so the area under a peak is that process's resistance.")
     with st.form("drt_form"):
-        c1, c2, c3 = st.columns(3)
-        rbf = c1.selectbox("Discretisation (RBF)", drtm.RBF_TYPES, index=0)
-        shape_ctl = c1.selectbox("RBF shape control", drtm.SHAPE_CONTROL, index=0)
-        coeff = c1.number_input("FWHM coefficient / shape factor", value=0.5, min_value=1e-3, format="%.3g")
-        data_used_lbl = c2.selectbox("Data used", list(drtm.DATA_USED), index=0)
-        ind_lbl = c2.selectbox("Inductance", list(drtm.INDUCTANCE), index=0)
-        der = c2.selectbox("Regularisation derivative", drtm.DERIVATIVE, index=0)
-        lam_lbl = c3.selectbox("λ selection", list(drtm.LAMBDA_METHODS), index=0,
-                               help="Maradesa et al. (2023) compare these criteria; GCV is the pyDRTtools default.")
-        lam = c3.number_input("λ (manual, or initial guess)", value=1e-3, min_value=1e-10, format="%.2e")
-        bayes = c3.checkbox("Bayesian credible band (HMC)", value=False,
-                            help="Samples the truncated-Gaussian posterior (99 % band). Slower.")
-        c4, c5, c6 = st.columns(3)
-        n_mc = c4.number_input("HMC samples", 1000, 20000, 2000, step=500)
-        prom = c5.number_input("Peak prominence (fraction of max γ)", value=0.02, min_value=0.0, max_value=1.0)
-        gmode = c6.selectbox("Plot", ["γ(ln τ) vs τ", "g(τ) = γ/τ vs τ"], index=0)
+        s, gmode = drt_inputs("")
         go = st.form_submit_button("Compute DRT", type="primary")
 
-    s = drtm.DRTSettings(rbf_type=rbf, data_used=drtm.DATA_USED[data_used_lbl], inductance=drtm.INDUCTANCE[ind_lbl],
-                         der_used=der, cv_type=drtm.LAMBDA_METHODS[lam_lbl], reg_param=float(lam),
-                         shape_control=shape_ctl, coeff=float(coeff), bayesian=bayes, n_mc=int(n_mc),
-                         peak_prominence=float(prom))
+    bayes = s.bayesian
     s_tuple = tuple(s.__dict__.values())
     if go:
         try:
@@ -563,7 +451,7 @@ with tab_drt:
                     f"**L** = {dres.L:.3g} H · **λ** = {dres.lam:.3g} · **R_pol** = ∫γ d ln τ = {dres.R_pol:.4g} Ω · "
                     f"mean |Δ| Re/Im = {m['mean_abs_rel_res_re_pct']:.2f} / {m['mean_abs_rel_res_im_pct']:.2f} %")
         if dres.peaks:
-            pk = pd.DataFrame([{"peak": f"P{p['peak']}" + (" *" if p["minor"] else ""), "τ / s": f"{p['tau_s']:.3g}",
+            pk = pd.DataFrame([{"peak": f"P{p['peak']}" + (" *" if p["minor"] else "") + (" †" if p.get("outside") else ""), "τ / s": f"{p['tau_s']:.3g}",
                                 "f = 1/(2πτ) / Hz": f"{p['f_Hz']:.3g}", "R / Ω": f"{p['R_ohm']:.4g}",
                                 "share": f"{p['share_pct']:.1f} %", "C = τ/R / F": f"{p['C_eq_F']:.3g}"}
                                for p in dres.peaks])
@@ -572,6 +460,10 @@ with tab_drt:
                 st.caption("\\* minor peak (< 3 % of the total area). Small peaks flanking a large one are a known "
                            "artefact of regularised DRT on depressed (CPE-like) arcs; don't assign a process to them "
                            "without independent evidence (T, pO₂, bias dependence, or repeat measurements).")
+            if any(p.get("outside") for p in dres.peaks):
+                st.caption("† peak outside the measured window (τ beyond 1/(2πf) of the highest or lowest frequency): "
+                           "its position and area are extrapolated. At the long-τ end this is often the onset of a "
+                           "blocking-electrode tail; crop the tail (frequency window) if so.")
             st.caption("Peak R is integrated between adjacent minima of γ; for overlapping peaks this split is "
                        "approximate.")
 

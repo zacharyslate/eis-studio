@@ -221,22 +221,25 @@ def _select_lambda(runs, entry, kw, cv_type):
 
 
 def find_drt_peaks(res: DRTResult, prominence=0.02, minor_frac=0.03):
-    """Locate peaks inside the measured tau window and integrate each between adjacent minima.
+    """Locate the peaks of gamma and integrate each between adjacent minima.
 
     Splitting at minima (rather than fitting Gaussians) is transparent but assigns
     overlapping tails to the nearer peak; treat R of strongly overlapping peaks as approximate.
 
-    Peaks holding < ``minor_frac`` of the total area are flagged ``minor``. Small peaks flanking
-    a large one are a known artefact of Tikhonov-regularised DRT applied to depressed (CPE-like)
-    arcs; never assign a physical process to a minor peak without independent evidence
-    (temperature/pO2/bias dependence, or a repeat measurement).
+    Peaks whose tau lies outside the measured window (tau = 1/(2 pi f)) are kept with their own
+    area and flagged ``outside``: they are extrapolations (an arc above the highest frequency, or
+    the onset of a blocking tail below the lowest), and dropping them would add their area to the
+    neighbouring peak. Peaks holding < ``minor_frac`` of the total area are flagged ``minor``.
+    Small peaks flanking a large one are a known artefact of Tikhonov-regularised DRT applied to
+    depressed (CPE-like) arcs; never assign a physical process to a minor peak without independent
+    evidence (temperature/pO2/bias dependence, or a repeat measurement).
     """
     tau, g = res.tau, res.gamma
     if g.max() <= 0:
         return []
     tmin, tmax = 1 / (2 * np.pi * res.freq.max()), 1 / (2 * np.pi * res.freq.min())
     idx, _ = find_peaks(g, prominence=prominence * g.max())
-    idx = [i for i in idx if tmin <= tau[i] <= tmax]
+    idx = list(idx)
     if not idx:
         return []
     lnt = np.log(tau)
@@ -255,7 +258,8 @@ def find_drt_peaks(res: DRTResult, prominence=0.02, minor_frac=0.03):
         out.append({"peak": k + 1, "tau_s": tp, "f_Hz": 1 / (2 * np.pi * tp), "gamma_max_ohm": float(g[i]),
                     "R_ohm": R, "C_eq_F": tp / R if R > 0 else np.nan,
                     "tau_lo_s": float(tau[lo]), "tau_hi_s": float(tau[hi]),
-                    "share_pct": 100 * R / total, "minor": bool(R < minor_frac * total)})
+                    "share_pct": 100 * R / total, "minor": bool(R < minor_frac * total),
+                    "outside": bool(not (tmin <= tp <= tmax))})
     return out
 
 

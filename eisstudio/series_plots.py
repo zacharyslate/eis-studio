@@ -62,16 +62,21 @@ def auto_zoom(items):
 
 
 @_locked
-def fig_series_eis(width, items, unit="Ω", font_size=8, zoom="auto", drt_x="tau"):
+def fig_series_eis(width, items, unit="Ω", font_size=8, zoom="auto", drt_x="tau", gamma_mode="gamma",
+                   drt_fit_arcs=True):
     """items: dicts with label, color, f, Z (already normalised), optional f_line/Z_line (fit) and
-    tau/gamma (DRT, normalised with the same factor). zoom: 'auto' hides blocking spikes, None or
-    0 shows everything, a number is the largest Z' shown."""
+    tau/gamma (DRT, normalised with the same factor) with tau_cut (the tau of the lowest frequency
+    given to the DRT; the curve is drawn faint beyond it). zoom: 'auto' hides blocking spikes, None
+    or 0 shows everything, a number is the largest Z' shown. gamma_mode: 'gamma' or 'g' (gamma/tau).
+    drt_fit_arcs: scale the DRT axis to the part of each curve well inside its data (tau < tau_cut/3),
+    so peaks made by the onset of a blocking tail run off the top instead of flattening the arcs."""
     with pub_style(font_size):
         fig = _fig(width, 0.80)
         gs = gridspec.GridSpec(2, 2, figure=fig)
         axn, axm = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])
         axp, axd = fig.add_subplot(gs[1, 0]), fig.add_subplot(gs[1, 1])
         xs, ys = [], []
+        arc_max, all_max = 0.0, 0.0
         for it in items:
             c, Z, f = it["color"], it["Z"], it["f"]
             kw = dict(mfc="none", mec=c, mew=0.7, ms=3.2, ls="none")
@@ -86,8 +91,21 @@ def fig_series_eis(width, items, unit="Ω", font_size=8, zoom="auto", drt_x="tau
             xs.append(Z.real)
             ys.append(-Z.imag)
             if it.get("tau") is not None:
-                x = it["tau"] if drt_x == "tau" else 1 / (2 * np.pi * it["tau"])
-                axd.plot(x, it["gamma"], "-", color=c, lw=1.1, label=it["label"])
+                tau = np.asarray(it["tau"])
+                g = np.asarray(it["gamma"]) / (tau if gamma_mode == "g" else 1.0)
+                x = tau if drt_x == "tau" else 1 / (2 * np.pi * tau)
+                tc = it.get("tau_cut")
+                all_max = max(all_max, float(np.nanmax(g)))
+                arc_max = max(arc_max, float(np.nanmax(g[tau < tc / 3])) if tc and np.any(tau < tc / 3)
+                              else float(np.nanmax(g)))
+                if tc:
+                    order = np.argsort(tau)
+                    k = int(np.searchsorted(tau[order], tc))
+                    ins, out = order[:min(k + 1, tau.size)], order[max(k - 1, 0):]  # overlap so they join
+                    axd.plot(x[ins], g[ins], "-", color=c, lw=1.1, label=it["label"])
+                    axd.plot(x[out], g[out], ":", color=c, lw=0.9, alpha=0.6)
+                else:
+                    axd.plot(x, g, "-", color=c, lw=1.1, label=it["label"])
         axn.set_xlabel(f"Z′ / {unit}")
         axn.set_ylabel(f"−Z″ / {unit}")
         axn.axhline(0, color="#999999", lw=0.5, zorder=1)
@@ -115,9 +133,14 @@ def fig_series_eis(width, items, unit="Ω", font_size=8, zoom="auto", drt_x="tau
                 axd.tick_params(top=False)
             else:
                 axd.set_xlabel(r"$f = 1/(2\pi\tau)$ / Hz")
-            axd.set_ylabel(rf"$\gamma(\ln\tau)$ / {unit}")
+            axd.set_ylabel(rf"$\gamma(\ln\tau)$ / {unit}" if gamma_mode != "g" else rf"$g(\tau)$ / {unit} s$^{{-1}}$")
             lo, hi = axd.get_ylim()
-            axd.set_ylim(min(0, lo), hi)
+            if drt_fit_arcs and arc_max > 0 and all_max > 1.3 * arc_max:
+                axd.set_ylim(min(0, lo), 1.15 * arc_max)
+                axd.text(0.6, 0.97, "tail-onset peaks\nrun off the top", transform=axd.transAxes, ha="center",
+                         va="top", fontsize=matplotlib.rcParams["font.size"] - 1, color="#777777")
+            else:
+                axd.set_ylim(min(0, lo), hi)
         else:
             axd.text(0.5, 0.5, "DRT not computed", transform=axd.transAxes, ha="center", va="center", color="#777777")
             axd.set_xticks([])
@@ -222,5 +245,31 @@ def fig_dc(width, steps, fit, sigma_text=None, font_size=8, log_current=True):
         a2.set_xlabel("E / V")
         a2.set_ylabel(f"$I_{{ss}}$ / {u}")
         _panel_label(a2, "b")
+        fig.tight_layout()
+    return fig
+
+
+@_locked
+def fig_param_trend(width, x, y, dy=None, xlabel="T / °C", ylabel="", colors=None, labels=None, logy=False,
+                    font_size=8):
+    """One fitted quantity against temperature (or spectrum number), with its standard errors."""
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    dy = np.zeros_like(y) if dy is None else np.nan_to_num(np.asarray(dy, float), nan=0.0, posinf=0.0)
+    with pub_style(font_size):
+        fig = _fig(min(width, 3.5), 0.75)
+        ax = fig.add_subplot(111)
+        cols = colors or ["#0072B2"] * x.size
+        ok = np.isfinite(x) & np.isfinite(y) & ((y > 0) if logy else True)
+        if ok.sum() > 1:
+            o = np.argsort(x[ok])
+            ax.plot(x[ok][o], y[ok][o], "-", color="#999999", lw=0.6, zorder=1)
+        for xi, yi, di, ci in zip(x[ok], y[ok], dy[ok], np.array(cols, dtype=object)[ok]):
+            ax.errorbar([xi], [yi], yerr=[[min(di, yi * 0.999) if logy else di], [di]], fmt="o", ms=4, mfc=ci,
+                        mec="k", mew=0.4, ecolor=ci, elinewidth=0.8, capsize=2, zorder=3)
+        if logy:
+            ax.set_yscale("log")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
         fig.tight_layout()
     return fig
