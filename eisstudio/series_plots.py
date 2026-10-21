@@ -44,7 +44,6 @@ def _legend(ax, n):
               fontsize=matplotlib.rcParams["legend.fontsize"] - (1 if n > 6 else 0))
 
 
-@_locked
 def auto_zoom(items):
     """Max Z' that shows every arc but hides blocking spikes: 1.15 x the largest Z' at which a
     spike starts. None when no spectrum has a spike."""
@@ -62,6 +61,7 @@ def auto_zoom(items):
     return hi + 0.15 * (hi - min(lo, 0.0))
 
 
+@_locked
 def fig_series_eis(width, items, unit="Ω", font_size=8, zoom="auto", drt_x="tau"):
     """items: dicts with label, color, f, Z (already normalised), optional f_line/Z_line (fit) and
     tau/gamma (DRT, normalised with the same factor). zoom: 'auto' hides blocking spikes, None or

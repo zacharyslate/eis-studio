@@ -153,19 +153,28 @@ def render():
     st.subheader("Measurements")
     tkey = f"s_table_{fkey}"
     if tkey not in ss:
+        per_file = {}
+        for m in meas:
+            per_file[m.source] = per_file.get(m.source, 0) + (m.kind == "eis")
+        # a temperature in the file name applies only when that file holds a single spectrum
+        T_names = [S.temperature_from_name(m.source) if m.kind == "eis" and per_file[m.source] == 1 else None
+                   for m in meas]
+        ss[tkey + "_Tnames"] = sum(t is not None for t in T_names)
         ss[tkey] = pd.DataFrame({
             "use": [m.kind != "other" for m in meas],
             "name": [m.name for m in meas],
             "type": [{"eis": "EIS", "ca": "DC step", "other": "other"}[m.kind] for m in meas],
             "file": [m.source for m in meas],
             "content": [m.summary() for m in meas],
-            "T (°C)": [None] * len(meas),
+            "T (°C)": T_names,
             "thickness (mm)": [None] * len(meas),
             "diameter (mm)": [None] * len(meas),
             "mass (mg)": [None] * len(meas),
             "E (V)": [round(float(np.nanmean(m.E)), 4) if m.E is not None else None for m in meas],
         })
         ss[tkey + "_v"] = 0
+    if ss.get(tkey + "_Tnames"):
+        st.caption(f"ℹ {ss[tkey + '_Tnames']} temperature(s) were read from the file names. Check them in the table.")
     c1, c2 = st.columns([4, 1], vertical_alignment="bottom")
     tlist = c1.text_input("Quick entry: temperatures of the spectra in order, °C (comma-separated)",
                           placeholder="25, 40, 55, 70, 85", key=f"s_tlist_{fkey}")
@@ -198,6 +207,8 @@ def render():
                                                    help="DC steps: potential (read from the file; edit to override)"),
         })
     eis_rows = [(i, meas[i]) for i in range(len(meas)) if table.at[i, "use"] and meas[i].kind == "eis"]
+    # spectra in order of temperature (those without one last, in table order)
+    eis_rows.sort(key=lambda r: (_num(table.at[r[0], "T (°C)"]) is None, _num(table.at[r[0], "T (°C)"]) or 0.0))
     dc_rows = [(i, meas[i]) for i in range(len(meas)) if table.at[i, "use"] and meas[i].kind in ("ca", "other")]
 
     def geom_of(i):
@@ -335,6 +346,15 @@ def render():
                     except ValueError as exc:
                         st.warning(str(exc))
                 if arr:
+                    resid = arr["y"] - (arr["slope"] * arr["x"] + arr["intercept"])
+                    bad_T = [(sig_ok[k], r) for k, r in enumerate(resid) if abs(r) > 0.15]
+                    if bad_T:
+                        st.warning("These spectra lie far from the Arrhenius line ("
+                                   + ", ".join(f"{meas[i].name} at {t:g} °C: {10 ** r:.2g}× the fitted σT"
+                                               for (i, t, _, _), r in bad_T)
+                                   + "). Check their fits and notes before trusting Eₐ: a fit that found a wrong "
+                                     "minimum, or a resistance that means something different at that temperature, "
+                                     "is the usual cause. Untick them in the table to exclude them.")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("Activation energy",
                               f"{arr['Ea_eV']:.3f} ± {arr['dEa_eV']:.1g} eV" if np.isfinite(arr["dEa_eV"])

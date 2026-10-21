@@ -19,6 +19,7 @@ import threading
 from contextlib import contextmanager
 
 import matplotlib
+from pyparsing import ParserElement
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402  (rc_context only; figures are not pyplot-managed)
@@ -34,10 +35,26 @@ _MPL_LOCK = threading.RLock()
 
 
 def _locked(fn):
+    """Run ``fn`` under the process-wide matplotlib lock.
+
+    Mathtext uses pyparsing's global packrat cache and clears it only after a *successful* parse.
+    A parse interrupted by an exception (historically: a concurrent parse emptying the parser's
+    state) leaves the failure cached, and every later render of the same label fails with
+    "Expected end of text". So the cache is cleared before each call, and once more before a
+    single retry if a mathtext parse error escapes.
+    """
     @functools.wraps(fn)
     def wrapper(*a, **k):
         with _MPL_LOCK:
-            return fn(*a, **k)
+            ParserElement.reset_cache()
+            try:
+                return fn(*a, **k)
+            except ValueError as exc:
+                if "ParseException" not in str(exc) and "ParseFatalException" not in str(exc):
+                    raise
+                ParserElement.reset_cache()
+                return fn(*a, **k)
+    wrapper._eis_locked = True
     return wrapper
 
 

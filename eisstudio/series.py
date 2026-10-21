@@ -387,36 +387,50 @@ R_METHODS = {
 }
 
 
-def tail_start(freq, Z):
-    """Index (in high->low f order) where a capacitive low-frequency tail begins, or None.
+def _running_median(y, w=5):
+    h = w // 2
+    yp = np.r_[np.full(h, y[0]), y, np.full(h, y[-1])]
+    return np.array([np.median(yp[i:i + w]) for i in range(y.size)])
 
-    The tail is the low-frequency run over which -Z'' rises monotonically (allowing 2 % noise)
-    with -phase above 30 deg at its end; it starts at the last local minimum of -Z''."""
+
+def tail_start(freq, Z):
+    """Index (in high->low f order) of the junction between the arcs and a capacitive low-frequency
+    tail, or None when the spectrum has no such tail.
+
+    -Z'' is smoothed with a 5-point running median, so one noisy point (mains pickup at 50/60 Hz,
+    for example) does not create a false minimum; the junction is the smoothed minimum, moved to the
+    lowest measured point within two points of it. A tail exists when -Z'' then rises to at least
+    twice that minimum and the last point has -phase above 30 deg."""
     mz = -Z.imag
     n = mz.size
     if n < 6:
         return None
-    i = n - 1
-    while i > 0 and mz[i - 1] <= mz[i] * 1.02 + 1e-12 * abs(mz).max():
-        i -= 1
+    sm = _running_median(mz, 5)
+    lo = int(np.argmin(sm[:n - 2]))
+    # the raw minimum next to the smoothed one (keeps the junction on a measured point)
+    a, b = max(lo - 2, 0), min(lo + 3, n - 2)
+    i = a + int(np.argmin(mz[a:b]))
     phase_end = -np.degrees(np.angle(Z[-1]))
-    if i >= n - 3 or phase_end < 30:
+    if i >= n - 3 or phase_end < 30 or sm[-1] < 2 * max(sm[i], 1e-12 * np.abs(Z).max()):
         return None
     return i
 
 
 def r_minimum(freq, Z):
-    """Z' at the minimum of -Z'' between the arcs and the tail (parabolic refinement)."""
+    """Z' at the minimum of -Z'' between the arcs and the tail: quadratic fit of the smoothed -Z''
+    against Z' over the five points around the junction."""
     i = tail_start(freq, Z)
     if i is None:
         raise ValueError("No low-frequency spike found (−Z″ does not rise at low frequency).")
-    if 0 < i < Z.size - 1:
-        x, y = Z.real[i - 1:i + 2], -Z.imag[i - 1:i + 2]
-        c = np.polyfit(x - x[1], y, 2)
+    sm = _running_median(-Z.imag, 5)
+    a, b = max(i - 2, 0), min(i + 3, Z.size)
+    x, y = Z.real[a:b], sm[a:b]
+    if x.size >= 3 and np.ptp(x) > 0:
+        c = np.polyfit(x - x.mean(), y, 2)
         if c[0] > 0:
-            xv = -c[1] / (2 * c[0])
-            if abs(xv) <= abs(x[2] - x[0]):
-                return float(x[1] + xv), float(abs(x[2] - x[0]) / 2)
+            xv = -c[1] / (2 * c[0]) + x.mean()
+            if x.min() <= xv <= x.max():
+                return float(xv), float(np.ptp(x) / 4)
     return float(Z.real[i]), float(abs(Z.real[min(i + 1, Z.size - 1)] - Z.real[max(i - 1, 0)]) / 2)
 
 
@@ -671,3 +685,18 @@ def norm_factor(mode, geom=None, rho_rel=None, m_exp=1.5, R=None):
     if mode == "shape":
         return (1.0 / R, "R") if R else None
     raise ValueError(mode)
+
+
+_T_IN_NAME = re.compile(r"(?<![A-Za-z0-9.])(-?\d+(?:\.\d+)?)\s*(°\s*C|ºC|degC|C|K)(?![A-Za-z])")
+
+
+def temperature_from_name(name):
+    """Temperature in deg C read from a file name such as 'pellet_25C.csv', 'x_80 °C', 'T_353K'.
+    None unless exactly one temperature-like token is present."""
+    stem = os.path.splitext(os.path.basename(name))[0]
+    hits = {(float(v), u.replace(" ", "")) for v, u in _T_IN_NAME.findall(stem)}
+    if len(hits) != 1:
+        return None
+    v, u = hits.pop()
+    T = round(v - 273.15, 2) if u == "K" else v
+    return T if -273.15 < T < 2000 else None

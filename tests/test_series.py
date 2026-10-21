@@ -101,3 +101,48 @@ def test_density_normalisation_collapses_pellets():
         R.append(r.R * k)
         assert unit == "Ω cm"
     assert np.ptp(R) / np.mean(R) < 0.03      # sigma = sigma_dense * rho_rel^1.5 by construction
+
+
+def test_temperature_from_file_name():
+    assert S.temperature_from_name("MOF_Bi_EIS_25C_150Kg_100mV.csv") == 25
+    assert S.temperature_from_name("x_-20C.txt") == -20
+    assert S.temperature_from_name("s_353.15K.csv") == 80
+    assert S.temperature_from_name("a_25C_b_40C.csv") is None          # ambiguous
+    assert S.temperature_from_name("LPSC_pellet_T-series_and_DC_linked.mpt") is None
+
+
+def test_junction_ignores_a_single_noisy_point():
+    ms, _ = load(["pellet_25C.csv"])
+    m = ms[0]
+    j0 = S.tail_start(m.freq, m.Z)
+    Z = m.Z.copy()
+    k = j0 + 4                                    # mains pickup on the spike side of the junction
+    Z[k] = Z[k].real - 1j * 0.2 * abs(Z[k].imag)  # -Z'' drops to a fifth: a false local minimum
+    assert abs(S.tail_start(m.freq, Z) - j0) <= 1
+    assert abs(S.r_minimum(m.freq, Z)[0] / S.r_minimum(m.freq, m.Z)[0] - 1) < 0.01
+
+
+def test_every_figure_function_is_locked_and_thread_safe():
+    import threading
+
+    from eisstudio import circuit_draw, plotting, series_plots
+    funcs = [getattr(mod, n) for mod in (plotting, series_plots) for n in dir(mod)
+             if n.startswith("fig_") and callable(getattr(mod, n))]
+    funcs += [plotting.to_bytes, circuit_draw.circuit_figure]
+    unlocked = [f.__name__ for f in funcs if not getattr(f, "_eis_locked", False)]
+    assert not unlocked, unlocked
+    ms, _ = load(["LPSC_pellet_T-series_and_DC_linked.mpt"])
+    items = [{"label": f"{t} °C", "color": c, "f": m.freq, "Z": m.Z}
+             for m, t, c in zip(ms[:5], TEMPS, series_plots.series_colors(TEMPS)[0])]
+    errors = []
+
+    def work():
+        try:
+            for _ in range(3):
+                plotting.to_bytes(series_plots.fig_series_eis(7.0, items), "png", 60)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(repr(exc))
+    threads = [threading.Thread(target=work) for _ in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert not errors, errors[:2]
