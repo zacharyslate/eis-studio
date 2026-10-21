@@ -146,3 +146,61 @@ def test_every_figure_function_is_locked_and_thread_safe():
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert not errors, errors[:2]
+
+
+def _squidstat_like(with_index_columns=True, noise_I=2e-9, G=2e-8, seed=3):
+    """Admiral-Squidstat-style export: Segment, ActionId; EIS (21), open circuit (41, with the meaningless
+    constant current such exports report), potentiostatic steps (3) with noisy E and I."""
+    rng = np.random.default_rng(seed)
+    rows, t, seg = [], 0.0, 0
+    f = np.logspace(5, -1, 31)
+    Z = 2000 / (1 + 1j * 2 * np.pi * f * 2000 * 1e-9) + 1 / (2e-6 * (1j * 2 * np.pi * f) ** 0.6)
+    for fi, zi in zip(f, Z):
+        t += 1
+        rows.append((seg, t, 0.13, 1.0e-6, fi, abs(zi), zi.real, zi.imag, np.degrees(np.angle(zi)), 21))
+    seg += 1
+    for k in range(600):                                  # 10 min open circuit, drifting potential
+        t += 1
+        rows.append((seg, t, 0.06 - 3e-5 * k, 1.35e-6, 0, 0, 0, 0, 0, 41))
+    for E in (0.1, 0.2, 0.3, 0.4, 0.5):
+        seg += 1
+        for k in range(1200):
+            t += 1
+            I = G * E + 5e-8 * E * np.exp(-k / 100) + noise_I * rng.standard_normal()
+            Ek = E + 4e-4 * rng.standard_normal() + (3e-3 if rng.random() < 0.02 else 0.0)   # spikes > 2 mV
+            rows.append((seg, t, Ek, I, 0, 0, 0, 0, 0, 3))
+        seg += 1
+        for k in range(60):                               # short rests between steps
+            t += 1
+            rows.append((seg, t, E - 0.02 * (1 - np.exp(-k / 10)), 1.4e-6, 0, 0, 0, 0, 0, 41))
+    head = ["Segment", "Elapsed Time (s)", "Potential (V)", "Current (A)", "Frequency (Hz)", "|Z| (ohms)",
+            "Zre (ohms)", "Zim (ohms)", "Phase of Z (deg)", "ActionId"]
+    keep = range(len(head)) if with_index_columns else [i for i, h in enumerate(head) if h not in ("Segment", "ActionId")]
+    lines = [",".join(head[i] for i in keep)] + [",".join(repr(float(r[i])) for i in keep) for r in rows]
+    return ("\n".join(lines) + "\n").encode()
+
+
+@pytest.mark.parametrize("index_columns", [True, False])
+def test_dc_steps_are_not_fragmented_and_open_circuit_is_excluded(index_columns):
+    ms, _ = S.load_series([(_squidstat_like(index_columns), "squid.csv")])
+    kinds = [m.kind for m in ms]
+    assert kinds.count("eis") == 1
+    ca = [m for m in ms if m.kind == "ca"]
+    assert len(ca) == 5, [(m.kind, m.summary()) for m in ms]
+    assert all(m.n >= 1100 for m in ca)
+    assert np.allclose([np.mean(m.E) for m in ca], [0.1, 0.2, 0.3, 0.4, 0.5], atol=2e-3)
+    assert all(np.mean(m.I) < 1e-7 for m in ca)            # no open-circuit pseudo-current leaked in
+
+
+def test_dc_fit_reports_resolution_and_upper_bound():
+    ms, _ = S.load_series([(_squidstat_like(noise_I=2e-10), "a.csv")])
+    st = [S.steady_state(m, 0.25) for m in ms if m.kind == "ca"]
+    assert all(s.resolved for s in st)
+    fit = S.dc_fit([s.E for s in st], [s.I_ss for s in st], False, [s.dI for s in st])
+    assert fit["significant"] and abs(fit["G_S"] / 2e-8 - 1) < 0.1
+    # current buried in noise: unresolved steps, slope not significant, upper bound above the truth
+    ms, _ = S.load_series([(_squidstat_like(noise_I=2e-7, G=2e-9), "b.csv")])
+    st = [S.steady_state(m, 0.1) for m in ms if m.kind == "ca"]
+    assert not any(s.resolved for s in st)
+    fit = S.dc_fit([s.E for s in st], [s.I_ss for s in st], False, [s.dI for s in st])
+    assert not fit["significant"] and fit["R_e_ohm"] is None and fit["G_upper_S"] > 2e-9

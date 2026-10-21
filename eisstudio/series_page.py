@@ -328,8 +328,8 @@ def render():
                         sig_ok.append((i, T, c["sigma_S_cm"], c["dsigma_S_cm"]))
                 df = pd.DataFrame(rows)
                 st.dataframe(df.drop(columns=["notes"]), hide_index=True, width="stretch",
-                             column_config={k: st.column_config.NumberColumn(format="%.4g") for k in df.columns
-                                            if k not in ("spectrum", "file", "notes")})
+                             column_config={k: st.column_config.NumberColumn(format="%.3e" if "σ" in k else "%.4g")
+                                            for k in df.columns if k not in ("spectrum", "file", "notes")})
                 bad = [(r["spectrum"], r["notes"]) for r in rows if r["notes"]]
                 if bad:
                     with st.expander(f"Notes and warnings ({len(bad)} spectra)"):
@@ -457,10 +457,16 @@ def render():
         if not dc_rows:
             st.info("No DC steps selected.")
         else:
+            steps0 = [(i, m, S.steady_state(m, 0.2, _num(table.at[i, "E (V)"]))) for i, m in dc_rows]
+            all_pos = all(r.resolved and r.I_ss > 0 for _, _, r in steps0)
             c1, c2, c3, c4 = st.columns(4)
-            tail = c1.number_input("Average over the last (% of each step)", 1.0, 100.0, 10.0, step=5.0, key="s_tail")
+            tail = c1.number_input("Average over the last (% of each step)", 1.0, 100.0, 20.0, step=5.0, key="s_tail",
+                                   help="Longer windows average more noise away, but only if the current has "
+                                        "stopped changing over them: check the drift and resolved columns.")
             origin = c2.checkbox("Force the line through the origin", value=False, key="s_origin")
-            logI = c3.checkbox("Log current axis", value=True, key="s_logI")
+            logI = c3.checkbox("Log current axis", value=all_pos, key=f"s_logI_{fkey}",
+                               help="Only sensible when every current is clearly positive; noisy currents that "
+                                    "cross zero are shown on a linear axis by default.")
             res_now = ss.get("s_results") or {}
             cmp_opts = ["–"] + [meas[i].name for i, _ in eis_rows if i in res_now and res_now[i].R]
             cmp = c4.selectbox("Compare with spectrum (σ_ion)", cmp_opts, key="s_cmp",
@@ -473,48 +479,85 @@ def render():
             E_cols = sp.series_colors([r.E for _, _, r in sres])[0]
             for (i, m, r), col in zip(sres, E_cols):
                 steps.append({"label": f"{r.E:.3g} V" if np.isfinite(r.E) else m.name, "color": col, "t": m.t,
-                              "I": m.I, "window": r.t_window, "I_ss": r.I_ss, "dI": r.dI, "E": r.E})
+                              "I": m.I, "window": r.t_window, "I_ss": r.I_ss, "dI": r.dI, "E": r.E,
+                              "resolved": r.resolved})
             dfs = pd.DataFrame([{"step": m.name, "file": m.source, "E (V)": r.E, "I_ss (A)": r.I_ss, "± I_ss (A)": r.dI,
-                                 "drift over window (%)": r.drift_pct, "window (s)": f"{r.t_window[0]:.4g}–{r.t_window[1]:.4g}",
+                                 "noise (A)": r.noise_A, "resolved": "yes" if r.resolved else "no",
+                                 "steady": "no" if r.drifting else "yes",
+                                 "drift over window (%)": r.drift_pct,
+                                 "window (s)": f"{r.t_window[0]:.4g}–{r.t_window[1]:.4g}",
                                  "notes": " · ".join(m.notes + r.notes)} for i, m, r in sres])
             st.dataframe(dfs, hide_index=True, width="stretch",
-                         column_config={k: st.column_config.NumberColumn(format="%.4g")
-                                        for k in ("E (V)", "I_ss (A)", "± I_ss (A)", "drift over window (%)")})
+                         column_config={**{k: st.column_config.NumberColumn(format="%.3e")
+                                           for k in ("I_ss (A)", "± I_ss (A)", "noise (A)")},
+                                        **{k: st.column_config.NumberColumn(format="%.3g")
+                                           for k in ("E (V)", "drift over window (%)")}})
+            n_unres = sum(not r.resolved for _, _, r in sres)
+            n_drift = sum(r.drifting for _, _, r in sres)
+            if n_unres:
+                st.warning(f"{n_unres} of {len(sres)} steady-state currents are not resolved from the noise "
+                           "(|I_ss| < 3 × its uncertainty). The fit weights each step by its uncertainty, so σ_e rests "
+                           "mainly on the resolved steps; when the slope is not significant only an upper bound is "
+                           "given. A lower current range, a shielded cell or longer steps would resolve them.")
+            if n_drift:
+                st.warning(f"{n_drift} step(s) were still changing over the averaging window. Their current is "
+                           "not yet the steady-state electronic current and overestimates σ_e.")
             outputs["csv"]["series_dc_steps.csv"] = ex.csv_bytes(dfs)
             fit, sig_txt = None, None
             try:
-                fit = S.dc_fit([r.E for _, _, r in sres], [r.I_ss for _, _, r in sres], origin)
+                fit = S.dc_fit([r.E for _, _, r in sres], [r.I_ss for _, _, r in sres], origin,
+                               [r.dI for _, _, r in sres])
             except ValueError as exc:
                 st.warning(str(exc))
             if fit:
                 g = geom_of(dc_rows[0][0])
-                ce = cond.conductivity(fit["R_e_ohm"], g, fit["dR_e_ohm"]) if g else None
                 c1, c2, c3 = st.columns(3)
-                c1.metric("R_e", f"{fit['R_e_ohm']:.4g} Ω", f"± {fit['dR_e_ohm']:.2g} Ω" if fit["dR_e_ohm"] else None,
-                          delta_color="off")
-                if ce:
-                    c2.metric("σ_e", f"{ce['sigma_S_cm']:.3e} S/cm",
-                              f"± {ce['dsigma_S_cm']:.1e} S/cm" if ce["dsigma_S_cm"] else None, delta_color="off")
-                    sig_txt = rf"$\sigma_e$ = {ce['sigma_S_cm']:.2e} S cm$^{{-1}}$"
+                ce = None
+                if fit["significant"]:
+                    ce = cond.conductivity(fit["R_e_ohm"], g, fit["dR_e_ohm"]) if g else None
+                    c1.metric("R_e", f"{fit['R_e_ohm']:.4g} Ω", f"± {fit['dR_e_ohm']:.2g} Ω", delta_color="off")
+                    if ce:
+                        c2.metric("σ_e", f"{ce['sigma_S_cm']:.3e} S/cm", f"± {ce['dsigma_S_cm']:.1e} S/cm",
+                                  delta_color="off")
+                        sig_txt = rf"$\sigma_e$ = {ce['sigma_S_cm']:.2e} S cm$^{{-1}}$"
                 else:
+                    Gu = fit["G_upper_S"]
+                    c1.metric("R_e", f"> {1 / Gu:.3g} Ω" if Gu > 0 else "not determined",
+                              "slope not significant", delta_color="off")
+                    if g and Gu > 0:
+                        ce_up = Gu * g.thickness_cm / g.area_cm2
+                        c2.metric("σ_e (upper bound, ~95 %)", f"< {ce_up:.2e} S/cm", "slope + 2 s.e.", delta_color="off")
+                        sig_txt = rf"$\sigma_e$ < {ce_up:.1e} S cm$^{{-1}}$ (slope not significant)"
+                        ce = {"sigma_S_cm": ce_up, "upper_bound": True}
+                if not g:
                     c2.info("Enter the geometry to get σ_e.")
                 if ce and cmp != "–":
                     ii = next(i for i, m in eis_rows if m.name == cmp)
                     ci = cond.conductivity(res_now[ii].R, geom_of(ii), res_now[ii].dR) if geom_of(ii) else None
                     if ci:
                         te = ce["sigma_S_cm"] / (ce["sigma_S_cm"] + ci["sigma_S_cm"])
-                        c3.metric("t_e = σ_e/(σ_e+σ_ion)", f"{te:.2e}", f"σ_ion = {ci['sigma_S_cm']:.3e} S/cm",
-                                  delta_color="off")
-                st.caption(f"Linear fit of I_ss vs E over {fit['n']} steps"
+                        c3.metric("t_e = σ_e/(σ_e+σ_ion)", ("< " if ce.get("upper_bound") else "") + f"{te:.2e}",
+                                  f"σ_ion = {ci['sigma_S_cm']:.3e} S/cm", delta_color="off")
+                if fit["curved"]:
+                    st.warning(f"The I–V points curve (quadratic term at {abs(fit['curvature_t']):.1f} standard errors). "
+                               "Ohmic electronic leakage gives a straight line through the origin; a current that sets "
+                               "in or grows faster at higher potential points to an electrode reaction or decomposition, "
+                               "and a single σ_e from the slope is not meaningful. Fit only the low-potential steps "
+                               "(untick the others in the table) or report the I–V curve.")
+                st.caption(f"Weighted linear fit of I_ss vs E over {fit['n']} steps"
                            + (" through the origin" if origin else f", intercept {fit['I0_A']:.3g} A")
-                           + f" · R² = {fit['r2']:.4f}. Check that every step reached steady state (drift column) "
-                           "and that the potentials stay inside the electrolyte's stability window; a curving "
-                           "I–V line means the electronic conductivity depends on the applied potential.")
+                           + f" · slope {fit['G_S']:.3g} ± {fit['dG_S']:.2g} S · reduced χ² {fit['chi2_red']:.2g}. "
+                           "Each step is weighted by 1/uncertainty². A curving I–V line (e.g. no current at low "
+                           "potential, then a rise) means the current is not ohmic electronic leakage: an electrode "
+                           "reaction or decomposition contributes, and the linear σ_e is not meaningful.")
                 outputs["csv"]["series_dc_fit.csv"] = ex.csv_bytes(pd.DataFrame([{
-                    "R_e_ohm": fit["R_e_ohm"], "dR_e_ohm": fit["dR_e_ohm"], "I0_A": fit["I0_A"], "r2": fit["r2"],
-                    "n_steps": fit["n"], "through_origin": fit["through_origin"],
+                    "slope_G_S": fit["G_S"], "dG_S": fit["dG_S"], "significant": fit["significant"],
+                    "G_upper_S": fit["G_upper_S"], "R_e_ohm": fit["R_e_ohm"], "dR_e_ohm": fit["dR_e_ohm"],
+                    "I0_A": fit["I0_A"], "chi2_red": fit["chi2_red"], "n_steps": fit["n"],
+                    "through_origin": fit["through_origin"],
                     "sigma_e_S_cm": ce["sigma_S_cm"] if ce else None,
-                    "dsigma_e_S_cm": ce["dsigma_S_cm"] if ce else None}]))
+                    "sigma_e_is_upper_bound": bool(ce and ce.get("upper_bound")),
+                    "dsigma_e_S_cm": ce.get("dsigma_S_cm") if ce else None}]))
             fig_dc = sp.fig_dc(width, steps, fit, sig_txt, fs, logI)
             _show(fig_dc)
             _fig_downloads(fig_dc, "series_dc_polarisation", "s_dl_dc")

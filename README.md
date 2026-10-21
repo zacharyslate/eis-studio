@@ -56,7 +56,7 @@ The same repository also deploys to [Streamlit Community Cloud](https://share.st
 
 ```bash
 python tests/make_samples.py          # regenerates the synthetic files in eisstudio/sample_data/
-python -m pytest -q tests/            # 29 tests: parsers, ECM/DRT recovery of known parameters, series analysis, app end-to-end
+python -m pytest -q tests/            # 32 tests: parsers, ECM/DRT recovery of known parameters, series analysis, app end-to-end
 ```
 
 Every synthetic file has known parameters, documented in `tests/make_samples.py`. The tests check that:

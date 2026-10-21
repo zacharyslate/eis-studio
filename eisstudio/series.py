@@ -86,7 +86,8 @@ _CURR = re.compile(r"<\s*i\s*>|^i\s*([/(\[]|$)|current|^im$|^idc\b|\.current|^i_
 _POT_PREF = [re.compile(p, re.I) for p in (r"<?\s*ewe\s*>?", r"ecell", r"^vf$", r"\bwe\(\d\)\.potential",
                                             r"^e\s*([/(\[]|$)|^ewe", r"potential(?!.*applied)", r"voltage",
                                             r"^v\s*([/(\[]|$)", r"control\s*/\s*m?v", r"applied")]
-_STEP = re.compile(r"^ns$|^step$|step\s*(no|number|index)|^sequence|^cycle\s*(number|no)?$|^loop", re.I)
+_STEP = re.compile(r"^ns$|^step$|step\s*(no|number|index)|^sequence|^cycle\s*(number|no)?$|^loop|^segment$|"
+                   r"^action\s*id$|^technique(\s*(id|index|number))?$", re.I)
 
 _CURRENT_UNITS = {"pa": 1e-12, "na": 1e-9, "ua": 1e-6, "µa": 1e-6, "μa": 1e-6, "ma": 1e-3, "a": 1.0}
 _POT_UNITS = {"mv": 1e-3, "v": 1.0}
@@ -300,14 +301,14 @@ def _parse_table(arr, header, fname, report, start_idx):
         tt = t[a:b]
         reset = np.diff(tt) < 0
         e_step = None
-        if step_change is None and E is not None:
-            dE = np.abs(np.diff(E[a:b]))
-            noise = np.nanmedian(dE) if dE.size else 0.0
-            e_step = dE > max(2e-3, 20 * noise)
+        short_ok = True
+        if step_change is None and E is not None and b - a >= 10:
+            e_step = _plateau_cuts(E[a:b])
+            short_ok = False                 # without an index column, very short plateaus are rests
         cuts = _cut_points(b - a, reset, step_change[a:b - 1] if step_change is not None else None, e_step)
-        for s0, s1 in _segments(0, b - a, cuts):
-            if s1 - s0 < 5:
-                continue
+        segs = [(s0, s1) for s0, s1 in _segments(0, b - a, cuts) if s1 - s0 >= 5]
+        first_new = len(out)
+        for s0, s1 in segs:
             sl = slice(a + s0, a + s1)
             m = Measurement("ca", "", fname, k)
             m.t = t[sl] - t[sl][0]
@@ -315,16 +316,69 @@ def _parse_table(arr, header, fname, report, start_idx):
             m.E = E[sl] if E is not None else None
             if m.E is not None:
                 spread = np.nanpercentile(m.E, 95) - np.nanpercentile(m.E, 5)
-                if spread > max(5e-3, 0.02 * abs(np.nanmedian(m.E))):
+                ok = np.isfinite(m.E)
+                trend = (abs(np.polyfit(m.t[ok], m.E[ok], 1)[0]) * np.ptp(m.t[ok])
+                         if ok.sum() > 2 and np.ptp(m.t[ok]) > 0 else 0.0)
+                if spread > max(5e-3, 0.02 * abs(np.nanmedian(m.E))) or trend > 2e-3:
                     m.kind = "other"
-                    m.notes.append(f"Potential not constant (spread {spread * 1e3:.3g} mV): not a "
-                                   "potentiostatic step, excluded from the DC analysis by default.")
+                    m.notes.append(f"Potential not constant (spread {spread * 1e3:.3g} mV, drift {trend * 1e3:.3g} mV): "
+                                   "an open-circuit or galvanostatic period, not a potentiostatic step; excluded "
+                                   "from the DC analysis by default.")
             if np.nanmax(np.abs(m.I)) == 0:
                 m.kind = "other"
                 m.notes.append("Current is zero throughout (open circuit?).")
             out.append(m)
             k += 1
+        if not short_ok:
+            # without an index column, a potentiostatic segment much shorter than the longest one in
+            # this run is a rest or a transition, not a step
+            ca_new = [x for x in out[first_new:] if x.kind == "ca"]
+            longest = max((x.n for x in ca_new), default=0)
+            for x in ca_new:
+                if x.n < 0.2 * longest:
+                    x.kind = "other"
+                    x.notes.append("Much shorter than the other potentiostatic steps (no step-index column to tell): "
+                                   "treated as a rest. Tick it in the table if it is a step.")
     return out
+
+
+def _plateau_cuts(E):
+    """Cut points (bool mask over the gaps between points) for a potential record without a
+    step-index column.
+
+    A point is 'flat' when a 15-point running median varies by less than max(2 mV, 6 x the
+    point-to-point noise) over a 15-point window. A short non-flat stretch between two flat runs is
+    one potential jump and gets a single cut at its largest point-to-point change; longer non-flat
+    stretches (relaxing open-circuit periods) become their own segments. Level jumps inside flat
+    runs are cut as well. Single noisy points never split a step."""
+    n = E.size
+    dr = np.diff(E)
+    noise = 1.4826 * np.nanmedian(np.abs(dr - np.nanmedian(dr))) if dr.size else 0.0
+    h = 7
+    med = _running_median(E, 2 * h + 1)
+    padded = np.r_[np.full(h, med[0]), med, np.full(h, med[-1])]
+    win = np.lib.stride_tricks.sliding_window_view(padded, 2 * h + 1)
+    flat = (win.max(axis=1) - win.min(axis=1)) < max(2e-3, 6 * noise)
+    cut = np.zeros(max(n - 1, 0), bool)
+    edges = np.flatnonzero(np.diff(flat.astype(int))) + 1
+    bounds = np.r_[0, edges, n]
+    runs = list(zip(bounds[:-1], bounds[1:]))
+    for k, (r0, r1) in enumerate(runs):
+        if flat[r0]:
+            jump = np.abs(np.diff(med[r0:r1])) > max(5e-3, 10 * noise)
+            jump &= ~np.r_[False, jump[:-1]]
+            cut[r0:r1 - 1] |= jump
+            continue
+        between = 0 < k < len(runs) - 1
+        if between and r1 - r0 <= 2 * (2 * h + 1):
+            j = r0 - 1 + int(np.argmax(np.abs(dr[r0 - 1:r1])))
+            cut[j] = True
+        else:
+            if r0 > 0:
+                cut[r0 - 1] = True
+            if r1 < n:
+                cut[r1 - 1] = True
+    return cut
 
 
 def sign_flip_needed(header, roles, Z):
@@ -572,11 +626,18 @@ class StepResult:
     drift_pct: float
     t_window: tuple
     notes: list = field(default_factory=list)
+    noise_A: float = 0.0
+    resolved: bool = True
+    drifting: bool = False
 
 
 def steady_state(m: Measurement, tail_frac=0.1, E_override=None, min_pts=5):
-    """Mean current over the last ``tail_frac`` of the step; drift = change over that window
-    (from a linear fit) relative to the mean, in %."""
+    """Steady-state current of one potentiostatic step: the mean over the last ``tail_frac``.
+
+    Uncertainty: the larger of the white-noise standard error and the standard error of six block
+    means, so slowly wandering (correlated) noise is not mistaken for precision. The step is
+    *resolved* when |I_ss| > 3 x its uncertainty, and *drifting* when the linear change over the
+    window exceeds both 5 % of I_ss and three times its own standard error."""
     t, I_ = m.t, m.I
     n = t.size
     t0 = t[-1] - tail_frac * (t[-1] - t[0])
@@ -585,52 +646,96 @@ def steady_state(m: Measurement, tail_frac=0.1, E_override=None, min_pts=5):
         sel = np.zeros(n, bool)
         sel[-min(min_pts, n):] = True
     ts, Is = t[sel], I_[sel]
+    k = Is.size
     I_ss = float(np.mean(Is))
-    dI = float(np.std(Is, ddof=1) / np.sqrt(Is.size)) if Is.size > 1 else 0.0
-    slope = np.polyfit(ts - ts[0], Is, 1)[0] if Is.size > 2 and np.ptp(ts) > 0 else 0.0
-    drift = float(abs(slope * np.ptp(ts)) / abs(I_ss) * 100) if I_ss else float("inf")
+    noise = float(np.std(Is, ddof=1)) if k > 1 else 0.0
+    dI = noise / np.sqrt(k) if k > 1 else 0.0
+    nb = min(6, k // 5)
+    if nb >= 3:
+        bm = np.array([b.mean() for b in np.array_split(Is, nb)])
+        dI = max(dI, float(np.std(bm, ddof=1) / np.sqrt(nb)))
+    change = dchange = 0.0
+    if k > 3 and np.ptp(ts) > 0:
+        c, cov = np.polyfit(ts - ts[0], Is, 1, cov=True)
+        change = float(c[0] * np.ptp(ts))
+        dchange = float(np.sqrt(cov[0, 0]) * np.ptp(ts))
+    drift = float(abs(change) / abs(I_ss) * 100) if I_ss else float("inf")
     if E_override is not None and np.isfinite(E_override):
         E = float(E_override)
     elif m.E is not None:
         E = float(np.nanmean(m.E[sel]))
     else:
         E = float("nan")
-    r = StepResult(m.name, E, I_ss, dI, drift, (float(ts[0]), float(ts[-1])))
-    if drift > 5:
-        r.notes.append(f"Current still changes by {drift:.1f} % over the averaging window: not at steady state; "
-                       "the electronic conductivity will be overestimated.")
+    r = StepResult(m.name, E, I_ss, float(dI), drift, (float(ts[0]), float(ts[-1])))
+    r.noise_A = noise
+    r.resolved = bool(abs(I_ss) > 3 * dI)
+    r.drifting = bool(abs(change) > 3 * dchange and abs(change) > max(0.05 * abs(I_ss), 3 * dI))
+    if not r.resolved:
+        r.notes.append(f"Not resolved: I_ss = {I_ss:.2e} ± {dI:.1e} A, with single-point noise of {noise:.1e} A. "
+                       "This step hardly constrains σ_e; a lower current range, shielding or a longer step would.")
+    if r.drifting:
+        r.notes.append(f"Still changing by {drift:.0f} % over the averaging window (beyond the noise): not at steady "
+                       "state, so the electronic current is overestimated. Use a longer step.")
     return r
 
 
-def dc_fit(E, I_ss, through_origin=False):
-    """Linear fit I = G E (+ I0). Returns dict with R_e = 1/G and its standard error."""
+def dc_fit(E, I_ss, through_origin=False, dI=None):
+    """Weighted linear fit I = G E (+ I0), weights 1/dI^2 when given.
+
+    Parameter uncertainties are scaled by the reduced chi^2 when the scatter exceeds the stated
+    errors. ``significant`` is False when G is not at least twice its standard error; R_e is then
+    not determined and only an upper bound on the conductance (G + 2 dG) is reported."""
     E = np.asarray(E, float)
     I_ = np.asarray(I_ss, float)
-    ok = np.isfinite(E) & np.isfinite(I_)
-    E, I_ = E[ok], I_[ok]
+    w = np.ones_like(E) if dI is None else np.asarray(dI, float)
+    ok = np.isfinite(E) & np.isfinite(I_) & np.isfinite(w)
+    E, I_, w = E[ok], I_[ok], w[ok]
+    if dI is not None:
+        floor = np.nanmedian(w[w > 0]) * 1e-3 if np.any(w > 0) else 1.0
+        w = np.maximum(w, floor)
     need = 1 if through_origin else 2
     if E.size < need or (not through_origin and np.unique(E).size < 2):
         raise ValueError("Need at least two steps at different potentials (or one, forced through the origin).")
     A = E[:, None] if through_origin else np.c_[E, np.ones_like(E)]
-    coef, *_ = np.linalg.lstsq(A, I_, rcond=None)
+    Aw, yw = A / w[:, None], I_ / w
+    coef, *_ = np.linalg.lstsq(Aw, yw, rcond=None)
     yhat = A @ coef
     dof = E.size - A.shape[1]
     G = float(coef[0])
     I0 = 0.0 if through_origin else float(coef[1])
+    cov = np.linalg.inv(Aw.T @ Aw)
     if dof > 0:
-        s2 = float(np.sum((I_ - yhat) ** 2) / dof)
-        dG = float(np.sqrt((s2 * np.linalg.inv(A.T @ A))[0, 0]))
+        chi2_red = float(np.sum(((I_ - yhat) / w) ** 2) / dof)
+        scale = max(chi2_red, 1.0) if dI is not None else chi2_red
+        dG = float(np.sqrt(cov[0, 0] * scale))
     else:
-        dG = float("nan")
+        chi2_red, dG = float("nan"), (float(np.sqrt(cov[0, 0])) if dI is not None else float("nan"))
     ss_tot = float(np.sum((I_ - I_.mean()) ** 2))
     r2 = 1 - float(np.sum((I_ - yhat) ** 2)) / ss_tot if ss_tot > 0 else 1.0
-    if G <= 0:
-        raise ValueError("The steady-state current does not increase with potential; no electronic resistance "
-                         "can be extracted.")
-    R_e = 1.0 / G
-    dR = dG / G ** 2 if np.isfinite(dG) else 0.0
-    return {"G_S": G, "dG_S": dG, "I0_A": I0, "R_e_ohm": R_e, "dR_e_ohm": float(dR), "r2": float(r2),
-            "n": int(E.size), "through_origin": bool(through_origin), "E": E, "I": I_}
+    significant = bool(G > 0 and np.isfinite(dG) and G > 2 * dG)
+    # linearity: is a quadratic term significant? (needs at least 4 steps)
+    curved, curv_t = False, float("nan")
+    if E.size >= 4:
+        Aq = np.c_[E ** 2, E, np.ones_like(E)] / w[:, None]
+        cq, *_ = np.linalg.lstsq(Aq, yw, rcond=None)
+        dofq = E.size - 3
+        if dofq > 0:
+            rq = yw - Aq @ cq
+            sq = max(float(np.sum(rq ** 2) / dofq), 1.0) if dI is not None else float(np.sum(rq ** 2) / dofq)
+            covq = np.linalg.inv(Aq.T @ Aq) * sq
+            curv_t = float(cq[0] / np.sqrt(covq[0, 0])) if covq[0, 0] > 0 else float("nan")
+            curved = bool(np.isfinite(curv_t) and abs(curv_t) > 2.5)
+    out = {"G_S": G, "dG_S": dG, "I0_A": I0, "r2": float(r2), "chi2_red": chi2_red, "n": int(E.size),
+           "through_origin": bool(through_origin), "weighted": dI is not None, "significant": significant,
+           "G_upper_S": float(max(G, 0.0) + 2 * dG) if np.isfinite(dG) else float("nan"), "E": E, "I": I_,
+           "curved": curved, "curvature_t": curv_t}
+    if significant:
+        out["R_e_ohm"] = 1.0 / G
+        out["dR_e_ohm"] = float(dG / G ** 2)
+    else:
+        out["R_e_ohm"] = None
+        out["dR_e_ohm"] = None
+    return out
 
 
 # --------------------------------------------------------------------------- #

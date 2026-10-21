@@ -171,11 +171,15 @@ def fig_dc(width, steps, fit, sigma_text=None, font_size=8, log_current=True):
         a1, a2 = (fig.subplots(1, 2) if width > 4 else fig.subplots(2, 1))
         k, u = current_unit([s["I_ss"] for s in steps])
         for s in steps:
-            I = np.abs(s["I"]) if log_current else s["I"]
-            a1.plot(s["t"], I / k, "-", color=s["color"], lw=0.9, label=s["label"])
-            w = (s["t"] >= s["window"][0]) & (s["t"] <= s["window"][1])
-            a1.plot(s["t"][w], (np.abs(s["I"][w]) if log_current else s["I"][w]) / k, "-", color=s["color"], lw=2.6,
-                    alpha=0.45, solid_capstyle="butt")
+            t, I = s["t"], (np.abs(s["I"]) if log_current else s["I"])
+            # raw points faint; a running mean (1/30 of the step) on top, so noisy steps stay readable
+            nw = max(5, I.size // 30)
+            Im = np.convolve(I, np.ones(nw) / nw, mode="valid")
+            tm = t[nw // 2: nw // 2 + Im.size]
+            a1.plot(t, I / k, "-", color=s["color"], lw=0.3, alpha=0.12)
+            a1.plot(tm, Im / k, "-", color=s["color"], lw=1.1, label=s["label"])
+            w = (tm >= s["window"][0]) & (tm <= s["window"][1])
+            a1.plot(tm[w], Im[w] / k, "-", color=s["color"], lw=3.0, alpha=0.5, solid_capstyle="butt")
         if log_current:
             a1.set_yscale("log")
             a1.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 2.0, 5.0)))
@@ -183,7 +187,13 @@ def fig_dc(width, steps, fit, sigma_text=None, font_size=8, log_current=True):
             a1.yaxis.set_minor_formatter(NullFormatter())
             a1.set_ylabel(f"|I| / {u}")
         else:
+            a1.axhline(0, color="#999999", lw=0.5)
             a1.set_ylabel(f"I / {u}")
+            Iall = np.concatenate([np.convolve(s["I"], np.ones(max(5, s["I"].size // 30)) / max(5, s["I"].size // 30),
+                                               mode="valid") for s in steps]) / k
+            lo, hi = np.nanpercentile(Iall, 0.5), np.nanpercentile(Iall, 99.5)
+            pad = 0.08 * (hi - lo if hi > lo else 1.0)
+            a1.set_ylim(min(lo, 0) - pad, hi + pad)   # the running means set the scale, not single spikes
         a1.set_xlabel("Time in step / s")
         _legend(a1, len(steps))
         _panel_label(a1, "a")
@@ -191,15 +201,22 @@ def fig_dc(width, steps, fit, sigma_text=None, font_size=8, log_current=True):
         Iss = np.array([s["I_ss"] for s in steps]) / k
         dI = np.array([s["dI"] for s in steps]) / k
         for e, i, d, s in zip(E, Iss, dI, steps):
-            a2.errorbar(e, i, yerr=d, fmt="o", ms=5, mfc="white", mec=s["color"], ecolor=s["color"], mew=1.2,
-                        capsize=2, zorder=3)
+            res = s.get("resolved", True)
+            a2.errorbar(e, i, yerr=d, fmt="o", ms=5, mfc=(s["color"] if res else "white"), mec=s["color"],
+                        ecolor=s["color"], mew=1.2, capsize=2, zorder=3)
         if fit is not None:
             ee = np.linspace(min(0.0, np.nanmin(E)), np.nanmax(E) * 1.05, 50)
-            a2.plot(ee, (fit["G_S"] * ee + fit["I0_A"]) / k, "-", color="#D55E00", lw=1.1, zorder=2)
-            txt = (rf"$R_e$ = {fit['R_e_ohm']:.3g} Ω" + (f" ± {fit['dR_e_ohm']:.1g}" if np.isfinite(fit['dR_e_ohm'])
-                                                          and fit['dR_e_ohm'] > 0 else "")
-                   + (f"\n{sigma_text}" if sigma_text else "") + f"\n$R^2$ = {fit['r2']:.4f}")
+            sig = fit.get("significant", True)
+            a2.plot(ee, (fit["G_S"] * ee + fit["I0_A"]) / k, "-" if sig else "--", color="#D55E00", lw=1.1, zorder=2)
+            if sig:
+                head = rf"$R_e$ = {fit['R_e_ohm']:.3g} ± {fit['dR_e_ohm']:.1g} Ω"
+            else:
+                head = "slope not significant"
+            txt = head + (f"\n{sigma_text}" if sigma_text else "")
             a2.text(0.04, 0.96, txt, transform=a2.transAxes, ha="left", va="top")
+            if any(not s.get("resolved", True) for s in steps):
+                a2.text(0.96, 0.04, "open symbols: not resolved\nfrom the noise", transform=a2.transAxes,
+                        ha="right", va="bottom", color="#555555", fontsize=matplotlib.rcParams["font.size"] - 1)
         a2.axhline(0, color="#999999", lw=0.5)
         a2.axvline(0, color="#999999", lw=0.5)
         a2.set_xlabel("E / V")
