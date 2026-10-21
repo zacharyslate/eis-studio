@@ -18,6 +18,7 @@ from eisstudio import ecm as ecmm
 from eisstudio import export as ex
 from eisstudio import plotting as pl
 from eisstudio import series as S
+from eisstudio import processes as PR
 from eisstudio import series_plots as sp
 from eisstudio.circuit_editor import PRESETS as CIRCUIT_PRESETS
 from eisstudio.ui_shared import (GAMMA_MODES, circuit_block, drt_inputs, edit_param_table, fit_options,
@@ -29,11 +30,15 @@ SAMPLE_SETS = {
     "Temperature series as separate files + DC table": [f"pellet_{t}C.csv" for t in (25, 40, 55, 70, 85)]
     + ["pellet_DC_polarisation.txt"],
     "Five pellets pressed to different densities": sorted(p.name for p in SERIES_DIR.glob("density_*.csv")),
+    "Bulk + grain boundary, 25–85 °C (separate files)": [f"polycrystal_{t}C.csv" for t in (25, 40, 55, 70, 85)],
 }
 SAMPLE_HINTS = {
     "Temperature series + DC steps (one EC-Lab file)": "Simulated at 25, 40, 55, 70, 85 °C; pellet 1.00 mm × "
     "10.0 mm, 125.7 mg. Type the temperatures below.",
     "Temperature series as separate files + DC table": "Same pellet as the EC-Lab sample: 25, 40, 55, 70, 85 °C.",
+    "Bulk + grain boundary, 25–85 °C (separate files)": "Pellet 1.00 mm × 10.0 mm. Bulk: σ(25 °C) = 1.0 × 10⁻⁵ "
+    "S/cm, Eₐ = 0.40 eV; grain boundary: R_gb = 3 R_bulk at 25 °C, Eₐ = 0.55 eV. Use the preset with two arcs from "
+    "the origin + blocking electrodes, p(R1,CPE1)-p(R2,CPE2)-CPE3, and see Arrhenius by process.",
     "Five pellets pressed to different densities": "All 10.0 mm diameter, 25 °C; thickness and mass are in the "
     "file names (theoretical density 1.86 g/cm³). Enter them per pellet in the table.",
 }
@@ -95,6 +100,99 @@ def _peak_flag(p, d, cut_applied=True):
     if p.get("outside"):
         return "outside the window"
     return "minor" if p["minor"] else ""
+
+
+def _process_section(procs, proc_notes, geom, times_T, width, fs, outputs, akey):
+    """Arrhenius plot and activation energy of every process of the circuit, tracked by time constant."""
+    st.markdown("#### Arrhenius by process")
+    st.caption("Each R–C/CPE pair of the circuit is one process, followed across the temperatures by its time "
+               "constant (fastest first) rather than by its name. The class comes from the effective capacitance "
+               "scaled to unit cell constant (Irvine, Sinclair & West 1990): bulk below 2 × 10⁻¹¹ F, grain "
+               "boundary to 10⁻⁸ F, surface layer or interphase to 10⁻⁷ F, electrode interface above. Correct it "
+               "in the table if you know better.")
+    cc = geom.cell_constant_per_cm if geom else None
+    if cc is None:
+        st.info("Enter the sample geometry to scale the capacitances and get conductivities; classes below use "
+                "the raw capacitance.")
+    for n in proc_notes:
+        st.caption(f"ℹ {n}")
+    rng = lambda v: f"{min(v):.2g}–{max(v):.2g}" if v else "–"  # noqa: E731
+    base = pd.DataFrame([{
+        "process": pr.label, "class": pr.cls,
+        "C_eff (F)": rng([p.C_eff for p in pr.points if p.C_eff]),
+        "C_eff·L/A (F cm⁻¹)": rng([p.C_eff * cc for p in pr.points if p.C_eff]) if cc else "–",
+        "f_c (Hz)": rng([p.f_c for p in pr.points if p.f_c]),
+        "outside window": ", ".join(f"{p.T_C:g} °C" for p in pr.points if p.outside) or "–"} for pr in procs])
+    ed = st.data_editor(base, key=f"s_proc_ed_{akey}", hide_index=True, width="stretch",
+                        disabled=[c for c in base.columns if c != "class"],
+                        column_config={"class": st.column_config.SelectboxColumn("class", options=PR.CLASS_NAMES,
+                                                                                 required=True)})
+    for pr, c in zip(procs, ed["class"]):
+        pr.cls = c
+    c1, c2 = st.columns(2)
+    incl_r = not c1.checkbox("Resistances: leave out arcs whose apex lies outside the window", value=False,
+                             key="s_proc_excl_r",
+                             help="An arc's resistance is often still fixed by where it meets the next arc or the "
+                                  "spike even when its apex is above the highest frequency (check against Z′ at the "
+                                  "−Z″ minimum). Tick this when the split between two resistances is uncertain.")
+    incl_f = c2.checkbox("Time constants: include arcs whose apex lies outside the window", value=False,
+                         key="s_proc_incl_f",
+                         help="Off by default: the characteristic frequency of such an arc is an extrapolation of "
+                              "the fitted CPE.")
+    bulk = next((pr for pr in procs if pr.cls == "bulk" and pr.kind == "pair"), None)
+    palette = sp.OKABE_ITO
+    rows, cond_series, freq_series = [], [], []
+    for k, pr in enumerate(procs):
+        col = palette[k % len(palette)]
+        q = {"bulk": "sigma", "grain boundary": "sigma_gb"}.get(pr.cls)
+        fc = PR.fit(pr, q, cc, bulk, incl_r, times_T) if q else None
+        fr = PR.fit(pr, "inv_R", cc, bulk, incl_r)
+        ff = PR.fit(pr, "f_c", cc, bulk, incl_f)
+        fd = PR.fit(pr, "drt", cc, bulk, False)
+        e = lambda a: f"{a['Ea_eV']:.3f} ± {a['dEa_eV']:.3f}" if a and np.isfinite(a["dEa_eV"]) else (  # noqa: E731
+            f"{a['Ea_eV']:.3f}" if a else "–")
+        alphas = [p.alpha for p in pr.points if p.alpha]
+        sname = ("σT" if times_T else "σ") if q != "sigma_gb" else ("specific σ_gb·T" if times_T else "specific σ_gb")
+        rows.append({"process": pr.label, "class": pr.cls,
+                     f"Eₐ from {sname} (eV)": e(fc),
+                     "Eₐ from 1/R (eV)": e(fr), "Eₐ from f_c (eV)": e(ff), "Eₐ from DRT peak (eV)": e(fd),
+                     "mean CPE α": f"{np.mean(alphas):.2f}" if alphas else "–",
+                     "temperatures": len(pr.points),
+                     "apex outside window": sum(p.outside for p in pr.points)})
+        if fc:
+            cond_series.append({"label": pr.label + (" (specific σ_gb)" if q == "sigma_gb" else ""), "color": col,
+                                "T_C": fc["T_all"], "y": fc["y_all"], "used": fc["used"], "fit": fc})
+        if ff:
+            freq_series.append({"label": pr.label + ", ECM", "color": col, "T_C": ff["T_all"], "y": ff["y_all"],
+                                "used": ff["used"], "fit": ff})
+        if fd:
+            freq_series.append({"label": pr.label + ", DRT", "color": col, "T_C": fd["T_all"], "y": fd["y_all"],
+                                "used": fd["used"], "fit": fd, "marker": "x"})
+    tab = pd.DataFrame(rows).fillna("–")
+    st.dataframe(tab, hide_index=True, width="stretch")
+    st.caption(
+        "A fit needs at least three temperatures (\"–\" otherwise). Hollow symbols in the figure are left out of "
+        "that fit. Read the columns together. **1/R** is the activation energy of the process's resistance. For a bulk "
+        "process **σ** gives the same value; σT, if chosen above, adds about k_BT. For a grain boundary, the "
+        "**specific σ_gb** of the brick-layer model, (L/A)(C_bulk/C_gb)/R_gb, uses effective capacitances; for "
+        "CPE elements these follow R as R^((1−α)/α), which adds roughly Eₐ(1−α)/α. For an R‖CPE arc with a "
+        "temperature-independent Q, the characteristic frequency and the DRT peak follow (RQ)^(−1/α) and give "
+        "about Eₐ/α. Agreement within those factors supports the assignment; a large mismatch means the fit "
+        "gives the element different meanings at different temperatures. An electrode or interphase process has "
+        "a resistance, not a conductivity, so only 1/R and f_c are given for it.")
+    for pr in procs:
+        if pr.notes:
+            st.caption(f"⚠ **{pr.label}**: " + " ".join(pr.notes))
+    if cond_series or freq_series:
+        fig = sp.fig_processes(width, cond_series, freq_series, times_T, fs)
+        _show(fig)
+        _fig_downloads(fig, "series_arrhenius_by_process", "s_dl_proc")
+        outputs["figures"]["series_arrhenius_by_process"] = fig
+    outputs["csv"]["series_processes.csv"] = ex.csv_bytes(pd.DataFrame([{
+        "process": pr.label, "class": pr.cls, "T_C": p.T_C, "element": p.element, "R_ohm": p.R, "dR_ohm": p.dR,
+        "C_eff_F": p.C_eff, "alpha": p.alpha, "f_c_Hz": p.f_c, "outside_window": p.outside,
+        "drt_peak_tau_s": pr.drt_tau.get(p.key)} for pr in procs for p in pr.points]))
+    outputs["csv"]["series_process_activation_energies.csv"] = ex.csv_bytes(tab)
 
 
 def _inspector(eis_rows, results, table, label_of, method, circuit, r_names, names, units, n_starts, time_budget,
@@ -472,11 +570,16 @@ def render():
                     ecm_ok = bool(names)
                     if ecm_ok:
                         r_all = [n for n in names if ecmm.element_type(n) == "R"]
+                        pend = ss.pop("s_rsel_pending", None)
+                        if pend and pend[0] == circuit:
+                            ss[f"s_rsel_{circuit}"] = [n for n in pend[1] if n in r_all]
                         r_names = st.multiselect(
                             "Resistances that make up the ionic resistance", r_all, default=r_all,
                             key=f"s_rsel_{circuit}",
                             help="E.g. the bulk arc only, or bulk + grain boundary for the total conductivity. "
-                                 "Leave out a lead/contact resistance (an R0 at the high-frequency intercept).")
+                                 "Leave out a lead/contact resistance (an R0 at the high-frequency intercept) and "
+                                 "any element of the electrode interface (µF capacitance, a characteristic "
+                                 "frequency below the window). Changing this needs no new analysis.")
                         if not r_names:
                             st.error("Choose at least one resistance.")
                             ecm_ok = False
@@ -541,7 +644,7 @@ def render():
             time_budget = 60.0 if global_opt else 20.0
 
             def akey_of(ov):
-                return _h(fkey, method, circuit, r_names, ptable.to_json() if ptable is not None else None, start,
+                return _h(fkey, method, circuit, ptable.to_json() if ptable is not None else None, start,
                           wkey, n_starts, global_opt, do_drt, sorted(drt_s.__dict__.items()), cut, theta, f_window,
                           temps, sorted((k, sorted(v.items())) for k, v in ov.items()))
             akey = akey_of(ov_now)
@@ -566,6 +669,27 @@ def render():
             if results is not None and not all(i in results for i, _ in eis_rows):
                 results = None
                 st.info("The selection changed. Press **Analyse spectra**.")
+            # the ionic resistance follows the current choice of resistances without refitting
+            procs, proc_notes = [], []
+            if results and method == "ecm":
+                for i, _ in eis_rows:
+                    r = results[i]
+                    if r.fit is not None:
+                        try:
+                            r.R, r.dR, use = S.ionic_from_fit(r.fit, r_names)
+                            r.extra["resistances"] = "+".join(use)
+                        except ValueError as exc:
+                            r.R = None
+                            r.notes.append(str(exc))
+                g_cc = next((geom_of(i) for i, _ in eis_rows if geom_of(i)), None)
+                fits_T = [(i, _num(table.at[i, "T (°C)"]), results[i].fit) for i, _ in eis_rows
+                          if results[i].fit is not None and _num(table.at[i, "T (°C)"]) is not None]
+                fits_T.sort(key=lambda x: x[1])
+                if fits_T:
+                    procs, proc_notes = PR.track(fits_T, g_cc.cell_constant_per_cm if g_cc else None)
+                    drts_now = {i: results[i].drt for i, _, _ in fits_T if results[i].drt is not None}
+                    if drts_now:
+                        PR.match_drt(procs, drts_now)
 
             # per-spectrum table (conductivity uses each sample's own geometry)
             rows, sig_ok, arr = [], [], None
@@ -595,6 +719,23 @@ def render():
                              column_config={k: st.column_config.NumberColumn(format="%.3e" if "σ" in k else "%.4g")
                                             for k in df.columns if k not in ("spectrum", "file", "notes",
                                                                              "own settings")})
+                in_sum = set(r_names or [n for n in names if ecmm.element_type(n) == "R"])
+                wrong = [pr for pr in procs if pr.kind == "pair" and pr.r_name in in_sum
+                         and pr.cls in ("electrode interface", "surface layer / interphase")]
+                if wrong:
+                    sugg = PR.suggested_ionic(procs) + [pr.points[0].element for pr in procs
+                                                        if pr.kind == "series" and pr.points[0].element in in_sum]
+                    c1, c2 = st.columns([4, 1.3], vertical_alignment="center")
+                    c1.warning(
+                        "The ionic resistance includes " + ", ".join(
+                            f"**{pr.r_name}** ({pr.cls}: C_eff "
+                            f"{min(p.C_eff for p in pr.points if p.C_eff):.2g}–{max(p.C_eff for p in pr.points if p.C_eff):.2g} F)"
+                            for pr in wrong)
+                        + ". An electrode or interphase element is not part of the ionic conduction through the "
+                          "sample; including it lowers σ and changes Eₐ.")
+                    if sugg and c2.button("Use " + " + ".join(sugg), key="s_use_sugg", width="stretch"):
+                        ss["s_rsel_pending"] = (circuit, sugg)
+                        st.rerun()
                 bad_kk = [r["spectrum"] for r in rows if r["KK: max |res| (%)"] and r["KK: max |res| (%)"] > 3]
                 if bad_kk:
                     st.warning(f"Lin-KK residuals exceed 3 % for {', '.join(bad_kk)}. Part of those spectra is not "
@@ -644,6 +785,10 @@ def render():
                         k: v for k, v in arr.items() if not isinstance(v, np.ndarray)}]))
                 elif len(eis_rows) > 1:
                     st.caption("Enter at least two different temperatures to fit an activation energy.")
+
+                # ---------------- Arrhenius by process
+                if len({p.T_C for pr in procs for p in pr.points}) >= 2:
+                    _process_section(procs, proc_notes, g_cc, tsel.startswith("σT"), width, fs, outputs, akey)
 
                 # ---------------- fitted parameters across the series
                 fits = [(i, m, results[i]) for i, m in eis_rows if results[i].fit is not None]

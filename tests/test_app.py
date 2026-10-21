@@ -106,7 +106,8 @@ def test_series_mode_circuit_fit_drt_and_individual_settings():
     m = {x.label: x.value for x in at.metric}
     assert m["Activation energy"].startswith(("0.44", "0.45")), m
     heads = [x.value for x in at.markdown if x.value.startswith("####")]
-    assert {"#### Fitted parameters", "#### DRT peaks", "#### Inspect one spectrum"} <= set(heads), heads
+    assert {"#### Fitted parameters", "#### DRT peaks", "#### Inspect one spectrum",
+            "#### Arrhenius by process"} <= set(heads), heads
     [b for b in at.button if b.label == "Refit this spectrum"][0].click().run()
     assert not at.exception, at.exception
     assert any(":" in k for k in at.session_state["s_overrides"])

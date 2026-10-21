@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 
 import numpy as np
 from impedance.models.circuits import fitting
-from scipy.optimize import curve_fit
 from impedance.models.circuits.elements import circuit_elements
 
 WEIGHTINGS = {
@@ -311,15 +310,22 @@ class _Budget(Exception):
 
 
 def _timed_curve_fit(freq, Z, circuit, p0, fixed, lo, hi, weighting, deadline):
-    """The non-global path of impedance.py's ``circuit_fit`` (same model, bounds, weighting,
-    maxfev=1e5 and ftol=1e-13), with a wall-clock deadline and one change: ``x_scale="jac"``.
-    With the default unit scaling the trust-region solver takes steps of the same absolute size
-    for every parameter, so a CPE Q of 1e-10 (pF-nF pellet capacitances) next to an R of 1e3
-    barely moves from its starting value.
+    """Weighted complex non-linear least squares of impedance.py's circuit model (same model,
+    bounds and weighting as its ``circuit_fit``), solved in log-parameter space with a wall-clock
+    deadline.
+
+    Resistances, CPE/capacitor magnitudes and other positive parameters span many decades (a Q of
+    1e-11 next to an R of 1e6), so the trust-region solver works on ln(p) for every parameter with
+    a non-negative lower bound; exponent-like parameters (upper bound <= 1) and parameters that may
+    be negative stay linear. In ln(p) a step is a relative change, the problem is far better
+    conditioned, and fits converge from much poorer starts than with curve_fit on raw values.
+    Standard errors are from the Jacobian at the optimum, scaled by the residual variance (the
+    same convention as curve_fit's absolute_sigma=False), transformed back to p.
 
     Every evaluated parameter vector is scored; if the deadline passes, the best one seen is
     returned with ``converged=False`` instead of blocking the interface for minutes.
     """
+    from scipy.optimize import least_squares
     f = np.asarray(freq, float)
     y = np.hstack([Z.real, Z.imag])
     model = fitting.wrapCircuit(circuit, fixed)
@@ -328,25 +334,62 @@ def _timed_curve_fit(freq, Z, circuit, p0, fixed, lo, hi, weighting, deadline):
     elif weighting == "proportional":
         sig = np.hstack([np.maximum(np.abs(Z.real), 1e-12), np.maximum(np.abs(Z.imag), 1e-12)])
     else:
-        sig = None
-    w = 1.0 / sig if sig is not None else 1.0
-    best = {"obj": np.inf, "p": np.asarray(p0, float)}
+        sig = np.ones_like(y)
+    lo, hi = np.asarray(lo, float), np.asarray(hi, float)
+    logp = (lo >= 0) & ~(np.isfinite(hi) & (hi <= 1.0))
+    p0 = np.asarray(p0, float).copy()
+    p0[logp] = np.maximum(p0[logp], np.maximum(lo[logp], 1e-300) * (1 + 1e-9) + 1e-300)
 
-    def timed(ff, *p):
-        out = model(ff, *p)
-        obj = float(np.sum(((out - y) * w) ** 2))
+    def to_p(u):
+        p = u.copy()
+        p[logp] = np.exp(np.clip(u[logp], -700.0, 700.0))
+        return p
+    u0 = p0.copy()
+    u0[logp] = np.log(p0[logp])
+    ulo, uhi = lo.copy(), hi.copy()
+    with np.errstate(divide="ignore"):
+        ulo[logp] = np.where(lo[logp] > 0, np.log(lo[logp]), -np.inf)
+        uhi[logp] = np.where(np.isfinite(hi[logp]), np.log(hi[logp]), np.inf)
+    u0 = np.clip(u0, np.nextafter(ulo, np.inf), np.nextafter(uhi, -np.inf))
+    best = {"obj": np.inf, "p": p0}
+
+    def resid(u):
+        p = to_p(u)
+        try:
+            with np.errstate(all="ignore"):
+                r = (np.asarray(model(f, *p), float) - y) / sig
+        except (NameError, ZeroDivisionError, OverflowError, ValueError):
+            r = np.full(y.size, 1e10)
+        obj = float(np.sum(r ** 2))
         if np.isfinite(obj) and obj < best["obj"]:
-            best["obj"], best["p"] = obj, np.asarray(p, float)
+            best["obj"], best["p"] = obj, p
         if time.monotonic() > deadline:
             raise _Budget()
-        return out
+        return np.where(np.isfinite(r), r, 1e10)
 
     try:
-        popt, pcov = curve_fit(timed, f, y, p0=p0, bounds=(lo, hi), sigma=sig, maxfev=int(1e5), ftol=1e-13,
-                               x_scale="jac")
-        return popt, np.sqrt(np.diag(pcov)), True
+        with np.errstate(all="ignore"):
+            sol = least_squares(resid, u0, bounds=(ulo, uhi), method="trf", x_scale="jac", ftol=1e-12,
+                                xtol=1e-12, gtol=1e-12, max_nfev=200 * (len(u0) + 1))
     except _Budget:
         return best["p"], None, False
+    popt = to_p(sol.x)
+    m, n = y.size, popt.size
+    # covariance in u (well scaled), then dp = p du for the log parameters
+    try:
+        s2 = 2 * sol.cost / max(m - n, 1)
+        with np.errstate(all="ignore"):
+            _, sv, vt = np.linalg.svd(sol.jac, full_matrices=False)
+        keep = sv > sv[0] * 1e-12
+        cov_u = (vt[keep].T / sv[keep] ** 2) @ vt[keep] * s2
+        du = np.sqrt(np.clip(np.diag(cov_u), 0, None))
+        if not np.all(keep):        # a direction the data do not determine: no finite error
+            null = np.abs(vt[~keep]).max(axis=0) > 1e-3
+            du[null] = np.inf
+        perr = np.where(logp, popt * du, du)
+    except np.linalg.LinAlgError:
+        perr = np.full(n, np.nan)
+    return popt, perr, True
 
 
 def fit_ecm(freq, Z, circuit, initial: dict, fixed: dict | None = None, bounds: dict | None = None,

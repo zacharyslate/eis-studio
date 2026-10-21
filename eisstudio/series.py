@@ -452,20 +452,33 @@ def tail_start(freq, Z):
     tail, or None when the spectrum has no such tail.
 
     -Z'' is smoothed with a 5-point running median, so one noisy point (mains pickup at 50/60 Hz,
-    for example) does not create a false minimum; the junction is the smoothed minimum, moved to the
-    lowest measured point within two points of it. A tail exists when -Z'' then rises to at least
-    twice that minimum and the last point has -phase above 30 deg."""
+    for example) does not create a false minimum. The junction is the last valley of the smoothed
+    -Z'' that lies below half of the arc maximum before it and after which -Z'' rises to at least
+    twice its value (the foot of an arc at the high-frequency end is not a valley); it is moved to
+    the lowest measured point within two points. A tail also needs -phase above 30 deg at the last
+    point."""
     mz = -Z.imag
     n = mz.size
     if n < 6:
         return None
     sm = _running_median(mz, 5)
-    lo = int(np.argmin(sm[:n - 2]))
+    floor = 1e-12 * np.abs(Z).max()
+    lo = None
+    for i in range(n - 3, 0, -1):
+        if sm[i] <= sm[i - 1] and sm[i] <= sm[i + 1]:
+            if sm[-1] >= 2 * max(sm[i], floor) and sm[i] < 0.5 * np.max(sm[:i + 1]):
+                lo = i
+                break
+    if lo is None:
+        lo = int(np.argmin(sm[:n - 2]))
+    else:                       # the deepest point of that valley (a flat median can end late)
+        a = max(lo - 6, 0)
+        lo = a + int(np.argmin(sm[a:min(lo + 3, n - 2)]))
     # the raw minimum next to the smoothed one (keeps the junction on a measured point)
     a, b = max(lo - 2, 0), min(lo + 3, n - 2)
     i = a + int(np.argmin(mz[a:b]))
     phase_end = -np.degrees(np.angle(Z[-1]))
-    if i >= n - 3 or phase_end < 30 or sm[-1] < 2 * max(sm[i], 1e-12 * np.abs(Z).max()):
+    if i >= n - 3 or phase_end < 30 or sm[-1] < 2 * max(sm[i], floor):
         return None
     return i
 
@@ -538,6 +551,19 @@ def _window(freq, Z, f_window):
     return freq, Z
 
 
+def ionic_from_fit(fit, r_names=None):
+    """(R, dR, names used): the sum of the chosen resistances of a circuit fit (all R when None).
+    Errors add in quadrature; fixed parameters contribute none."""
+    all_r = [n for n, *_ in fit.all_params() if ecmm.element_type(n) == "R"]
+    use = [n for n in (r_names or all_r) if n in all_r]
+    if not use:
+        raise ValueError(f"None of the chosen resistances ({', '.join(r_names or [])}) is in {fit.circuit}.")
+    R = float(sum(fit.param(n)[0] for n in use))
+    dR2 = [fit.param(n)[1] ** 2 for n in use if n not in fit.fixed]
+    dR = float(np.sqrt(sum(v for v in dR2 if np.isfinite(v)))) if dR2 else 0.0
+    return R, dR, use
+
+
 def analyse_spectrum(m: Measurement, T_C, method, geom=None, circuit=None, r_names=None, n_starts=4,
                      time_budget_s=20.0, f_window=None, initial=None, fixed=None, bounds=None,
                      weighting="modulus", global_opt=False):
@@ -562,13 +588,7 @@ def analyse_spectrum(m: Measurement, T_C, method, geom=None, circuit=None, r_nam
                                time_budget_s)
             res.fit = fit
             res.notes += fit.warnings
-            all_r = [n for n, *_ in fit.all_params() if ecmm.element_type(n) == "R"]
-            use = [n for n in (r_names or all_r) if n in all_r]
-            if not use:
-                raise ValueError(f"None of the chosen resistances ({', '.join(r_names or [])}) is in {circuit}.")
-            res.R = float(sum(fit.param(n)[0] for n in use))
-            dR2 = [fit.param(n)[1] ** 2 for n in use if n not in fixed]
-            res.dR = float(np.sqrt(sum(v for v in dR2 if np.isfinite(v)))) if dR2 else 0.0
+            res.R, res.dR, use = ionic_from_fit(fit, r_names)
             res.extra = {"resistances": "+".join(use), "fit_max_res_pct": fit.metrics.get("max_abs_rel_res_pct")}
         elif method == "min":
             res.R, res.dR = r_minimum(freq, Z)

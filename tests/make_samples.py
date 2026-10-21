@@ -153,3 +153,22 @@ for k, (rr, Lmm) in enumerate(zip([0.70, 0.75, 0.80, 0.85, 0.90], [1.30, 1.20, 1
     np.savetxt(sdir / f"density_{k + 1}_L{Lmm:.2f}mm_m{mass_mg:.1f}mg.csv", np.c_[fs_, Zd.real, Zd.imag],
                delimiter=",", header="Frequency (Hz),Z' (Ohm),Z'' (Ohm)", comments="", fmt="%.8e")
 print("wrote series samples:", sorted(p.name for p in sdir.iterdir()))
+
+# 4) polycrystalline pellet with a bulk and a grain-boundary arc, 25-85 C, separate files.
+#    bulk: sigma_b(25 C) = 1.0e-5 S/cm, Ea = 0.40 eV, C_eff = eps0*30*A/L, alpha 0.95
+#    grain boundary: R_gb = 3 R_b at 25 C, Ea = 0.55 eV, C_eff = 100 x bulk, alpha 0.90
+#    blocking CPE Q = 2e-6, alpha 0.85; 10 MHz - 0.1 Hz, 0.3 % noise
+fp = np.logspace(7, -1, 81)
+wq = 2 * np.pi * fp
+for T in temps:
+    k = (1 / (kB * 298.15) - 1 / (kB * (T + 273.15)))
+    Rb = L_cm / (1.0e-5 * A_cm2) * np.exp(-0.40 * k)
+    Rgb = 3 * L_cm / (1.0e-5 * A_cm2) * np.exp(-0.55 * k)
+    Cb = EPS0 * 30 * A_cm2 / L_cm
+    Qb = Cb ** 0.95 * Rb ** (0.95 - 1)
+    Qgb = (100 * Cb) ** 0.90 * Rgb ** (0.90 - 1)
+    Zp = par(Rb, zcpe(Qb, 0.95, wq)) + par(Rgb, zcpe(Qgb, 0.90, wq)) + zcpe(2e-6, 0.85, wq)
+    Zp = Zp + 0.003 * np.abs(Zp) * (rng.standard_normal(fp.size) + 1j * rng.standard_normal(fp.size))
+    np.savetxt(sdir / f"polycrystal_{T}C.csv", np.c_[fp, Zp.real, Zp.imag], delimiter=",",
+               header="Frequency (Hz),Z' (Ohm),Z'' (Ohm)", comments="", fmt="%.8e")
+print("wrote polycrystal series")

@@ -268,3 +268,53 @@ def test_effective_capacitance_survives_a_vanishing_exponent():
     vals["CPE1_1"] = 0.9
     d = ecmm.derived_quantities(res)
     assert np.isclose(d[0]["C_eff_F"], 1e-7 ** (1 / 0.9) * 3e3 ** (0.1 / 0.9))
+
+
+def _three_process_series(temps=(25, 40, 55, 70, 85), seed=7):
+    """Bulk (Ea 0.45 eV, 5 pF), grain boundary (0.60 eV, 1 nF) and a blocking electrode (CPE) on a
+    cell with L/A = 1 cm^-1, 1 MHz - 0.1 Hz, 0.3 % noise."""
+    rng = np.random.default_rng(seed)
+    f = np.logspace(6, -1, 71)
+    w = 2j * np.pi * f
+    out = []
+    for T in temps:
+        k = 1 / KB * (1 / 298.15 - 1 / (T + 273.15))
+        Rb, Rgb = 1e6 * np.exp(-0.45 * k), 2e6 * np.exp(-0.60 * k)
+        Z = (1 / (1 / Rb + 5e-12 * w ** 0.97) + 1 / (1 / Rgb + 1e-9 * w ** 0.9)
+             + 1 / (1e-6 * w ** 0.8))
+        Z = Z * (1 + 0.003 * (rng.standard_normal(f.size) + 1j * rng.standard_normal(f.size)))
+        out.append(S.Measurement("eis", f"{T} C", "synthetic", freq=f, Z=Z))
+    return out
+
+
+def test_processes_are_tracked_classified_and_give_their_own_activation_energies():
+    from eisstudio import drt as drtm
+    from eisstudio import processes as P
+    temps = (25, 40, 55, 70, 85)
+    ms = _three_process_series(temps)
+    items = [(k, m, T) for k, (m, T) in enumerate(zip(ms, temps))]
+    res = S.analyse_series(items, "ecm", "p(R1,CPE1)-p(R2,CPE2)-CPE3", None, 4, 30, None, "data", kk=False,
+                           drt_settings=drtm.DRTSettings(cv_type="custom", reg_param=1e-4, inductance="discard"))
+    procs, notes = P.track([(k, T, res[k].fit) for k, _, T in items], cell_constant_per_cm=1.0)
+    pairs = [p for p in procs if p.kind == "pair"]
+    assert [p.cls for p in pairs] == ["bulk", "grain boundary"], [(p.label, p.cls) for p in pairs]
+    assert P.suggested_ionic(procs) == [pairs[0].r_name, pairs[1].r_name]
+    bulk, gb = pairs
+    a = P.fit(bulk, "sigma", 1.0, times_T=False)
+    assert abs(a["Ea_eV"] - 0.45) < 0.01, a["Ea_eV"]
+    a = P.fit(gb, "inv_R", 1.0)
+    assert abs(a["Ea_eV"] - 0.60) < 0.015, a["Ea_eV"]
+    # specific gb conductivity uses the effective capacitances; for a CPE, C_eff = Q^(1/a) R^((1-a)/a)
+    # follows R, which adds Ea_gb (1-a_gb)/a_gb - Ea_b (1-a_b)/a_b to the activation energy
+    a = P.fit(gb, "sigma_gb", 1.0, bulk=bulk, times_T=False)
+    expect = 0.60 + 0.60 * 0.1 / 0.9 - 0.45 * 0.03 / 0.97
+    assert abs(a["Ea_eV"] - expect) < 0.02, (a["Ea_eV"], expect)
+    # for a ZARC (R || CPE with constant Q) tau = (RQ)^(1/a), so f_c and the DRT peak give Ea_R / a
+    assert abs(P.fit(bulk, "f_c", 1.0)["Ea_eV"] - 0.45 / 0.97) < 0.02
+    assert abs(P.fit(gb, "f_c", 1.0)["Ea_eV"] - 0.60 / 0.9) < 0.02
+    P.match_drt(procs, {k: res[k].drt for k, _, _ in items})
+    assert len(gb.drt_tau) >= 4
+    a = P.fit(gb, "drt", 1.0)
+    assert abs(a["Ea_eV"] - 0.60 / 0.9) < 0.03, a["Ea_eV"]
+    # the electrode element would be classed as such
+    assert P.classify(1e-6, 1.0) == "electrode interface" and P.classify(5e-12, 1.0) == "bulk"

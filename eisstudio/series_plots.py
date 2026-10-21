@@ -273,3 +273,64 @@ def fig_param_trend(width, x, y, dy=None, xlabel="T / °C", ylabel="", colors=No
         ax.set_ylabel(ylabel)
         fig.tight_layout()
     return fig
+
+
+@_locked
+def fig_processes(width, cond_series, freq_series, times_T=True, font_size=8):
+    """Arrhenius plots per process. Each series: dict(label, color, T_C, y, used (bool mask), fit
+    (arrhenius dict or None), marker). Left: conductivities (sigma or sigma*T); right: relaxation
+    frequencies. Points left out of a fit (outside the window) are drawn hollow."""
+    panels = [(s, ylab) for s, ylab in ((cond_series, r"σT / S cm$^{-1}$ K" if times_T else r"σ / S cm$^{-1}$"),
+                                       (freq_series, r"$f_c$ = 1/(2πτ) / Hz")) if s]
+    with pub_style(font_size):
+        if not panels:
+            fig = _fig(min(width, 3.5), 0.6)
+            ax = fig.add_subplot(111)
+            ax.text(0.5, 0.5, "No process to plot", ha="center", va="center", transform=ax.transAxes)
+            ax.set_axis_off()
+            return fig
+        wide = width > 4 and len(panels) == 2
+        fig = _fig(width if wide else min(width, 3.5), 0.55 if wide else 1.0 * len(panels))
+        axes = fig.subplots(1, len(panels)) if wide else fig.subplots(len(panels), 1)
+        axes = np.atleast_1d(axes)
+        for ax, (series, ylab), lab in zip(axes, panels, "ab"):
+            xs = []
+            for s in series:
+                T = np.asarray(s["T_C"], float)
+                x = 1000 / (T + 273.15)
+                y = np.asarray(s["y"], float)
+                if ylab.startswith("σT"):
+                    y = y * (T + 273.15)
+                used = np.asarray(s["used"], bool)
+                mk = s.get("marker", "o")
+                ok = np.isfinite(y) & (y > 0)
+                ax.plot(x[ok & used], y[ok & used], mk, ms=4.5, color=s["color"], mfc=s["color"], mec=s["color"],
+                        zorder=3, ls="none")
+                ax.plot(x[ok & ~used], y[ok & ~used], mk, ms=4.5, mfc="white", mec=s["color"], mew=1.0, zorder=3,
+                        ls="none")
+                fit = s.get("fit")
+                name = s["label"]
+                if fit:
+                    xf = np.linspace(x[ok].min() - 0.02, x[ok].max() + 0.02, 30)
+                    ax.plot(xf, 10 ** (fit["slope"] * xf + fit["intercept"]), "-" if mk == "o" else "--",
+                            color=s["color"], lw=1.0, zorder=2)
+                    dE = fit["dEa_eV"]
+                    name += f": {fit['Ea_eV']:.3f}" + (f" ± {dE:.3f}" if np.isfinite(dE) else "") + " eV"
+                ax.plot([], [], mk + ("-" if mk == "o" else "--"), color=s["color"], ms=4, lw=1.0, label=name)
+                xs.append(x[ok])
+            ax.set_yscale("log")
+            ax.set_xlabel(r"1000 / T / K$^{-1}$")
+            ax.set_ylabel(ylab)
+            if xs:
+                xa = np.concatenate(xs)
+                ax.set_xlim(xa.min() - 0.05 * np.ptp(xa) - 0.01, xa.max() + 0.05 * np.ptp(xa) + 0.01)
+            sec = ax.secondary_xaxis("top", functions=(lambda v: 1000 / np.maximum(v, 1e-9) - 273.15,
+                                                       lambda v: 1000 / np.maximum(v + 273.15, 1e-9)))
+            sec.set_xlabel("T / °C")
+            sec.tick_params(direction="in")
+            ax.tick_params(top=False)
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=1, frameon=False,
+                      fontsize=matplotlib.rcParams["legend.fontsize"] - 1, handlelength=1.8)
+            _panel_label(ax, lab)
+        fig.tight_layout()
+    return fig
